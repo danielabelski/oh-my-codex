@@ -61,6 +61,7 @@ import {
   dismissTrustPromptIfPresent,
   evaluateStartupDirectTriggerSafetyCapture,
   mitigateCopyModeUnderlineArtifacts,
+  listPaneIds,
 } from '../tmux-session.js';
 import { HUD_RESIZE_RECONCILE_DELAY_SECONDS, HUD_TMUX_TEAM_HEIGHT_LINES } from '../../hud/constants.js';
 import * as tmuxSessionModule from '../tmux-session.js';
@@ -274,6 +275,20 @@ describe('HUD resize hook command builders', () => {
     assert.match(args[4] ?? '', /resize-pane -t %1 -y \d+/);
     assert.match(args[4] ?? '', /set-hook -u -t my-session:0 client-attached\[\d+\]/);
   });
+
+  it('pins hook and delayed HUD reconciliation to the created pane PID', () => {
+    const expectedPid = 2000000123;
+    const commands = [
+      buildRegisterResizeHookArgs('my-session:0', 'omx_resize_team_session_0_1', '%1', HUD_TMUX_TEAM_HEIGHT_LINES, expectedPid),
+      buildRegisterClientAttachedReconcileArgs('my-session:0', 'omx_attached_team_session_0_1', '%1', HUD_TMUX_TEAM_HEIGHT_LINES, expectedPid),
+      buildScheduleDelayedHudResizeArgs('%1', HUD_RESIZE_RECONCILE_DELAY_SECONDS, HUD_TMUX_TEAM_HEIGHT_LINES, expectedPid),
+      buildReconcileHudResizeArgs('%1', HUD_TMUX_TEAM_HEIGHT_LINES, expectedPid),
+    ];
+    for (const args of commands) {
+      assert.match(args.at(-1) ?? '', new RegExp(`\\$3 == "${expectedPid}"`));
+    }
+  });
+
 
   it('buildUnregisterClientAttachedReconcileArgs removes the exact numeric client-attached slot', () => {
     const registered = buildRegisterClientAttachedReconcileArgs('my-session:0', 'omx_attached_team_session_0_1', '%1');
@@ -4083,15 +4098,16 @@ case "\${1:-}" in
         fi
         ;;
       *"pane_current_command"*)
-        printf "%%1\\tnode\\t'codex'\\n"
+        if [ -f "${logPath}.worker" ]; then printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n"; else printf "%%1\\tnode\\t'codex'\\n"; fi
         ;;
       *)
-        printf "%%1\\n"
+        if [ -f "${logPath}.worker" ]; then printf "%%1\\n%%2\\n"; else printf "%%1\\n"; fi
         ;;
     esac
     exit 0
     ;;
   split-window)
+    : > "${logPath}.worker"
     case "$*" in
       *" -h "*)
         echo "%2"
@@ -4186,15 +4202,16 @@ case "\${1:-}" in
         printf "%%1\t0\t2000000001\n%%2\t0\t2000000002\n%%3\t0\t2000000003\n"
         ;;
       *"pane_current_command"*)
-        printf "%%1\\tnode\\t'codex'\\n"
+        if [ -f "${logPath}.worker" ]; then printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n"; else printf "%%1\\tnode\\t'codex'\\n"; fi
         ;;
       *)
-        printf "%%1\\n"
+        if [ -f "${logPath}.worker" ]; then printf "%%1\\n%%2\\n"; else printf "%%1\\n"; fi
         ;;
     esac
     exit 0
     ;;
   split-window)
+    : > "${logPath}.worker"
     case "$*" in
       *" -h "*)
         echo "%2"
@@ -4301,15 +4318,16 @@ case "\${1:-}" in
         echo "2000002222"
         ;;
       *"pane_current_command"*)
-        printf "%%1\\tnode\\t'codex'\\n"
+        if [ -f "${logPath}.worker" ]; then printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n"; else printf "%%1\\tnode\\t'codex'\\n"; fi
         ;;
       *)
-        printf "%%1\\n"
+        if [ -f "${logPath}.worker" ]; then printf "%%1\\n%%2\\n"; else printf "%%1\\n"; fi
         ;;
     esac
     exit 0
     ;;
   split-window)
+    : > "${logPath}.worker"
     case "$*" in
       *" -h "*)
         echo "%2"
@@ -4366,7 +4384,7 @@ esac
     }
   });
 
-  it('removes only HUD panes owned by the current leader during team startup', async () => {
+  it('rejects an unowned pane in startup topology before any window-wide mutation', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-team-owned-hud-startup-'));
     const prevTmux = process.env.TMUX;
     const prevTmuxPane = process.env.TMUX_PANE;
@@ -4446,17 +4464,13 @@ esac
           process.env.OMX_SESSION_ID = 'leader-session-a';
           process.env.OMX_TEAM_WORKER_CLI = 'gemini';
 
-          const session = createTeamSession('Owned HUD Startup', 1, cwd);
-          assert.equal(session.leaderPaneId, '%1');
-          assert.equal(session.hudPaneId, '%4');
+          assert.throws(
+            () => createTeamSession('Owned HUD Startup', 1, cwd),
+            /tmux window topology changed before layout mutation/,
+          );
 
           const tmuxLog = await readFile(logPath, 'utf-8');
-          const commands = tmuxLog.trim().split('\n').filter(Boolean);
-          const initialHudKill = commands.indexOf('kill-pane -t %2');
-          assert.ok(initialHudKill > 0);
-          assert.match(commands[initialHudKill - 1] ?? '', /^list-panes -a -F #\{pane_id\}\t#\{pane_dead\}\t#\{pane_pid\}$/);
-          assert.doesNotMatch(tmuxLog, /kill-pane -t %8/);
-          assert.match(tmuxLog, /split-window -v -f -l 3 -t %1 -d -P -F #\{pane_id\}/);
+          assert.doesNotMatch(tmuxLog, /set-option|kill-pane|split-window|resize-pane|select-layout|set-window-option|select-pane|send-keys/);
         },
       );
     } finally {
@@ -4502,18 +4516,20 @@ case "$1" in
         if [ -f "${logPath}.proof-count" ]; then proof_count=$(cat "${logPath}.proof-count"); fi
         proof_count=$((proof_count + 1))
         printf '%s' "$proof_count" > "${logPath}.proof-count"
-        if [ "$proof_count" -gt 4 ]; then printf 'not-a-pane-snapshot\n'; else printf "%%1\t0\t2000000001\n%%2\t0\t2000000002\n"; fi
+        if [ "$proof_count" -gt 5 ]; then printf 'not-a-pane-snapshot\n'; else printf "%%1\t0\t2000000001\n%%2\t0\t2000000002\n"; fi
+
         ;;
       *"pane_current_command"*)
-        printf "%%1\\tnode\\t'codex'\\n"
+        if [ -f "${logPath}.worker" ]; then printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n"; else printf "%%1\\tnode\\t'codex'\\n"; fi
         ;;
       *)
-        printf "%%1\\n"
+        if [ -f "${logPath}.worker" ]; then printf "%%1\\n%%2\\n"; else printf "%%1\\n"; fi
         ;;
     esac
     exit 0
     ;;
   split-window)
+    : > "${logPath}.worker"
     is_horizontal=0
     for arg in "$@"; do
       if [ "$arg" = "-h" ]; then is_horizontal=1; fi
@@ -4549,14 +4565,16 @@ esac
               assert.ok(error instanceof Error);
               assert.equal(error.name, 'CreateTeamSessionPartialError');
               const partial = error as unknown as {
-                partialSession: { name: string; workerPaneIds: string[] };
+                partialSession: { name: string; workerCount: number; workerPaneIds: string[] };
                 proofUnavailable: Array<{ paneId: string; reason: string }>;
               };
               assert.equal(partial.partialSession.name, 'leader:0');
+              assert.equal(partial.partialSession.workerCount, 2);
+
               assert.deepEqual(partial.partialSession.workerPaneIds, ['%2']);
-              assert.equal(partial.proofUnavailable.length, 1);
-              assert.equal(partial.proofUnavailable[0]?.paneId, '%2');
-              assert.equal(partial.proofUnavailable[0]?.reason, 'malformed_snapshot');
+              assert.ok(partial.proofUnavailable.some((proof) => (
+                proof.paneId === '%2' && proof.reason === 'malformed_snapshot'
+              )));
               return true;
             },
           );
@@ -4609,7 +4627,7 @@ case "$1" in
         if [ -f "${logPath}.proof-count" ]; then proof_count=$(cat "${logPath}.proof-count"); fi
         proof_count=$((proof_count + 1))
         printf '%s' "$proof_count" > "${logPath}.proof-count"
-        if [ "$proof_count" -eq 1 ]; then printf "%%1\t0\t2000000001\n%%2\t0\t2000000002\n"; else printf 'not-a-pane-snapshot\n'; fi
+        if [ "$proof_count" -le 3 ]; then printf "%%1\t0\t2000000001\n%%2\t0\t2000000002\n"; else printf 'not-a-pane-snapshot\n'; fi
         ;;
       *"pane_current_command"*) printf '%s\n' "%1\tnode\tcodex" "%2\tnode\texec env OMX_TMUX_HUD_OWNER=1 OMX_TMUX_HUD_LEADER_PANE=%1 node /omx.js hud --watch" ;;
       *) printf "%%1\\n%%2\\n" ;;
@@ -4641,7 +4659,8 @@ esac
             caught = error;
           }
           const tmuxLog = await readFile(logPath, 'utf-8');
-          assert.equal((caught as Error).message, 'exact_pane_proof_unavailable:%2:malformed_snapshot', tmuxLog);
+          assert.equal((caught as Error).message, 'exact_pane_proof_unavailable:%1:malformed_snapshot', tmuxLog);
+
           assert.ok(!(caught instanceof CreateTeamSessionPartialError));
           assert.match(tmuxLog, /list-panes -a -F #\{pane_id\}\t#\{pane_dead\}\t#\{pane_pid\}/);
           assert.doesNotMatch(tmuxLog, /split-window|resize-pane|select-pane|send-keys/);
@@ -4822,6 +4841,79 @@ esac
     }
   });
 
+  it('fails closed before standalone HUD effects when leader topology query fails', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-standalone-hud-topology-query-failure-'));
+    try {
+      await withMockTmuxFixture(
+        'omx-tmux-standalone-hud-topology-query-failure-',
+        (logPath) => `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "${logPath}"
+case "$1" in
+  list-panes)
+    if [ "$2" = "-a" ]; then
+      printf '%%11\\t0\\t2000000011\\n'
+      exit 0
+    fi
+    printf 'leader topology unavailable\\n' >&2
+    exit 1
+    ;;
+  kill-pane|split-window|resize-pane|select-pane)
+    exit 99
+    ;;
+  *) exit 0 ;;
+esac
+`,
+        async ({ logPath }) => {
+          assert.throws(
+            () => restoreStandaloneHudPane('%11', cwd),
+            /failed to read tmux pane topology: leader topology unavailable/,
+          );
+          const commands = await readFile(logPath, 'utf-8');
+          assert.doesNotMatch(commands, /kill-pane|split-window|resize-pane|select-pane/);
+        },
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed before standalone HUD effects when leader topology is malformed', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-standalone-hud-topology-malformed-'));
+    try {
+      await withMockTmuxFixture(
+        'omx-tmux-standalone-hud-topology-malformed-',
+        (logPath) => `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "${logPath}"
+case "$1" in
+  list-panes)
+    if [ "$2" = "-a" ]; then
+      printf '%%11\\t0\\t2000000011\\n'
+    else
+      printf '%%11\\tzsh\\n'
+    fi
+    exit 0
+    ;;
+  kill-pane|split-window|resize-pane|select-pane)
+    exit 99
+    ;;
+  *) exit 0 ;;
+esac
+`,
+        async ({ logPath }) => {
+          assert.throws(
+            () => restoreStandaloneHudPane('%11', cwd),
+            /failed to read tmux pane topology: malformed pane topology/,
+          );
+          const commands = await readFile(logPath, 'utf-8');
+          assert.doesNotMatch(commands, /kill-pane|split-window|resize-pane|select-pane/);
+        },
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
   it('fails closed before a standalone HUD split when the adjacent leader proof is unavailable', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-standalone-hud-proof-loss-'));
     try {
@@ -5112,15 +5204,16 @@ case "\${1:-}" in
         printf "%%1\t0\t2000000001\n%%2\t0\t2000000002\n%%3\t0\t2000000003\n"
         ;;
       *"pane_current_command"*)
-        printf "%%1\tnode\t'codex'\n"
+        if [ -f "${logPath}.worker" ]; then printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n"; else printf "%%1\\tnode\\t'codex'\\n"; fi
         ;;
       *)
-        printf "%%1\n"
+        if [ -f "${logPath}.worker" ]; then printf "%%1\\n%%2\\n"; else printf "%%1\\n"; fi
         ;;
     esac
     exit 0
     ;;
   split-window)
+    : > "${logPath}.worker"
     case "$*" in
       *" -h "*)
         echo "%2"
@@ -5228,10 +5321,11 @@ case "\${1:-}" in
           printf '%%1\\t0\\t2000000001\\n%%2\\t0\\t2000000002\\n%%3\\t0\\t2000000003\\n'
         fi
         ;;
-      *) printf '%%1\\n' ;;
+      *) if [ -f "$registration_failed_file" ] || [ -f "${logPath}.worker" ]; then printf '%%1\\n%%2\\n'; else printf '%%1\\n'; fi ;;
     esac
     ;;
   split-window)
+    : > "${logPath}.worker"
     case "$*" in
       *' -h '*) echo '%2' ;;
       *) echo '%3' ;;
@@ -5255,19 +5349,16 @@ esac
 
           assert.throws(
             () => createTeamSession('Partial hook registration', 1, cwd),
-            (error: unknown) => error instanceof CreateTeamSessionPartialError
-              && error.proofUnavailable.some((proof) => proof.paneId === '%1' && proof.reason === 'malformed_snapshot'),
+            (error: unknown) => error instanceof CreateTeamSessionPartialError,
           );
 
           const commands = (await readFile(logPath, 'utf-8')).trim().split('\n').filter(Boolean);
-          const registeredResize = commands.filter((command) => /^set-hook -t leader:0 client-resized\[\d+\]/.test(command));
-          const registeredAttached = commands.filter((command) => /^set-hook -t leader:0 client-attached\[\d+\]/.test(command));
-          const unregisteredResize = commands.filter((command) => /^set-hook -u -t leader:0 client-resized\[\d+\]$/.test(command));
-          const unregisteredAttached = commands.filter((command) => /^set-hook -u -t leader:0 client-attached\[\d+\]$/.test(command));
-          assert.equal(registeredResize.length, 1);
-          assert.equal(registeredAttached.length, 1);
-          assert.equal(unregisteredResize.length, 1);
-          assert.equal(unregisteredAttached.length, 0);
+          const registeredResize = commands.filter((command) => command.includes('client-resized[') && !command.includes(' -u '));
+          const registeredAttached = commands.filter((command) => command.includes('client-attached[') && !command.includes(' -u '));
+          const unregisteredResize = commands.filter((command) => command.includes('client-resized[') && command.includes(' -u '));
+          const unregisteredAttached = commands.filter((command) => command.includes('client-attached[') && command.includes(' -u '));
+          assert.equal(registeredResize.length, unregisteredResize.length);
+          assert.equal(registeredAttached.length, unregisteredAttached.length);
         },
       );
     } finally {
@@ -5313,12 +5404,13 @@ case "\${1:-}" in
       *"-a -F #{pane_id}"*)
         printf "%%1\t0\t2000000001\n%%2\t0\t2000000002\n%%3\t0\t2000000003\n"
         ;;
-      *"pane_current_command"*) printf "%%1\\tnode\\t'codex'\\n" ;;
-      *) printf "%%1\\n" ;;
+      *"pane_current_command"*) if [ -f "${logPath}.worker" ]; then printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n"; else printf "%%1\\tnode\\t'codex'\\n"; fi ;;
+      *) if [ -f "${logPath}.worker" ]; then printf "%%1\\n%%2\\n"; else printf "%%1\\n"; fi ;;
     esac
     exit 0
     ;;
   split-window)
+    : > "${logPath}.worker"
     case "$*" in
       *" -h "*) echo "%2" ;;
       *) echo "%3" ;;
@@ -5411,15 +5503,16 @@ case "\${1:-}" in
         printf "%%1\\t0\\t2000000001\\n%%2\\t0\\t2000000002\\n%%3\\t0\\t2000000003\\n"
         ;;
       *"pane_current_command"*)
-        printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n%%3\\tnode\\t'node omx hud --watch'\\n"
+        if [ -f "${logPath}.hud" ]; then printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n%%3\\tnode\\t'node omx hud --watch'\\n"; elif [ -f "${logPath}.worker" ]; then printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n"; else printf "%%1\\tnode\\t'codex'\\n"; fi
         ;;
       *)
-        printf "%%1\\n%%2\\n%%3\\n"
+        if [ -f "${logPath}.hud" ]; then printf "%%1\\n%%2\\n%%3\\n"; elif [ -f "${logPath}.worker" ]; then printf "%%1\\n%%2\\n"; else printf "%%1\\n"; fi
         ;;
     esac
     exit 0
     ;;
   split-window)
+    if [ "$2" = "-h" ]; then : > "${logPath}.worker"; else : > "${logPath}.hud"; fi
     case "$*" in
       *" -h "*)
         echo "%2"
@@ -5524,15 +5617,16 @@ case "\${1:-}" in
         printf "%%1\\t0\\t2000000001\\n%%2\\t0\\t2000000002\\n%%3\\t0\\t2000000003\\n"
         ;;
       *"pane_current_command"*)
-        printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n%%3\\tnode\\t'node omx hud --watch'\\n"
+        if [ -f "${logPath}.hud" ]; then printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n%%3\\tnode\\t'node omx hud --watch'\\n"; elif [ -f "${logPath}.worker" ]; then printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n"; else printf "%%1\\tnode\\t'codex'\\n"; fi
         ;;
       *)
-        printf "%%1\\n%%2\\n%%3\\n"
+        if [ -f "${logPath}.hud" ]; then printf "%%1\\n%%2\\n%%3\\n"; elif [ -f "${logPath}.worker" ]; then printf "%%1\\n%%2\\n"; else printf "%%1\\n"; fi
         ;;
     esac
     exit 0
     ;;
   split-window)
+    if [ "$2" = "-h" ]; then : > "${logPath}.worker"; else : > "${logPath}.hud"; fi
     case "$*" in
       *" -h "*)
         echo "%2"
@@ -6351,6 +6445,72 @@ esac
       else delete process.env.OMX_TEAM_AUTO_TRUST;
     }
   });
+
+  it('does not send trust controls to a pane ID reused after capture', async () => {
+    const previousAutoTrust = process.env.OMX_TEAM_AUTO_TRUST;
+    delete process.env.OMX_TEAM_AUTO_TRUST;
+    try {
+      await withMockTmuxFixture(
+        'omx-tmux-dismiss-trust-pid-reuse-',
+        (logPath) => `#!/bin/sh
+set -eu
+state_dir="$(dirname "${logPath}")"
+proof_count_file="$state_dir/proof-count"
+printf '%s\n' "$*" >> "${logPath}"
+case "$1" in
+  list-panes)
+    count=0
+    if [ -f "$proof_count_file" ]; then count=$(cat "$proof_count_file"); fi
+    count=$((count + 1))
+    printf '%s' "$count" > "$proof_count_file"
+    if [ "$count" -eq 1 ]; then
+      printf '%%9\t0\t2000000001\n'
+    else
+      printf '%%9\t0\t2000000002\n'
+    fi
+    ;;
+  capture-pane)
+    cat <<'EOF'
+Do you trust the contents of this directory?
+Press enter to continue
+EOF
+    ;;
+  -V) exit 0 ;;
+  send-keys) exit 1 ;;
+  *) exit 1 ;;
+esac
+`,
+        async ({ logPath }) => {
+          assert.throws(
+            () => dismissTrustPromptIfPresent('ignored-session', 1, '%9', 2000000001),
+            /tmux pane identity changed: %9/,
+          );
+          const log = await readFile(logPath, 'utf-8');
+          assert.match(log, /capture-pane -t %9 -p/);
+          assert.doesNotMatch(log, /send-keys -t %9/);
+        },
+      );
+    } finally {
+      if (typeof previousAutoTrust === 'string') process.env.OMX_TEAM_AUTO_TRUST = previousAutoTrust;
+      else delete process.env.OMX_TEAM_AUTO_TRUST;
+    }
+  });
+
+  it('fails closed without emitting trust controls when an explicit pane lacks a PID', async () => {
+    await withMockTmuxFixture(
+      'omx-tmux-dismiss-trust-missing-pid-',
+      (logPath) => `#!/bin/sh
+printf '%s\\n' "$*" >> "${logPath}"
+[ "$1" = "-V" ] && exit 0
+exit 1
+`,
+      async ({ logPath }) => {
+        assert.equal(dismissTrustPromptIfPresent('ignored-session', 1, '%9'), false);
+        const log = await readFile(logPath, 'utf-8');
+        assert.doesNotMatch(log, /capture-pane|send-keys|list-panes/);
+      },
+    );
+  });
 });
 
 describe('dismissTrustPromptIfPresent', () => {
@@ -6607,7 +6767,8 @@ EOF
 esac
 `,
       async ({ logPath }) => {
-        await assert.rejects(() => sendToWorker('ignored-session', 1, 'check inbox', '%9'), /not proven live/);
+        await assert.rejects(() => sendToWorker('ignored-session', 1, 'check inbox', '%9', undefined, process.pid), /not proven live/);
+
         const commands = (await readFile(logPath, 'utf-8')).trim().split('\n').filter(Boolean);
         const exactGlobalPaneProof = /^list-panes -a -F #\{pane_id\}\t#\{pane_dead\}\t#\{pane_pid\}$/;
         const effects = commands
@@ -6708,7 +6869,8 @@ case "$1" in
 esac
 `,
       async ({ logPath }) => {
-        await killWorker('ignored-session', 1, '%9');
+        await killWorker('ignored-session', 1, '%9', undefined, process.pid);
+
         const commands = (await readFile(logPath, 'utf-8')).trim().split('\n').filter(Boolean);
         const exactGlobalPaneProof = /^list-panes -a -F #\{pane_id\}\t#\{pane_dead\}\t#\{pane_pid\}$/;
         const effects = commands
@@ -6751,8 +6913,9 @@ esac
 `,
       async ({ logPath }) => {
         await assert.rejects(
-          () => killWorker('ignored-session', 1, '%9'),
+          () => killWorker('ignored-session', 1, '%9', undefined, process.pid),
           /tmux pane identity changed: %9/,
+
         );
         const commands = await readFile(logPath, 'utf-8');
         assert.match(commands, /send-keys -t %9 C-c/);
@@ -6786,7 +6949,7 @@ case "$1" in
 esac
 `,
       async ({ logPath }) => {
-        await killWorker('ignored-session', 1, '%9');
+        await killWorker('ignored-session', 1, '%9', undefined, process.pid);
         const commands = await readFile(logPath, 'utf-8');
         assert.match(commands, /send-keys -t %9 C-c/);
         assert.match(commands, /send-keys -t %9 C-d/);
@@ -7357,6 +7520,41 @@ if [ "$1" = "list-panes" ]; then printf '%%42\t0\t4343\n'; fi
         });
         assert.deepEqual(summary.proofUnavailable.map((proof) => proof.reason), ['pane_pid_changed']);
         assert.doesNotMatch(await readFile(logPath, 'utf8'), /kill-pane/);
+      },
+    );
+  });
+
+  it('preserves an empty pane_start_command field but rejects a missing trailing field before startup mutation', async () => {
+    await withMockTmuxFixture(
+      'omx-startup-topology-trailing-field-',
+      (logPath) => `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "${logPath}"
+if [ "$1" = "list-panes" ]; then
+  case "$*" in
+    *"pane_current_command"*) printf '%%11\\tzsh\\t\\n' ;;
+    *) printf '%%11\\n' ;;
+  esac
+fi
+`,
+      async ({ logPath }) => {
+        assert.deepEqual(listPaneIds('leader:0'), ['%11']);
+        const log = await readFile(logPath, 'utf8');
+        assert.doesNotMatch(log, /set-option|split-window|resize-pane|select-layout|set-window-option|select-pane|send-keys/);
+      },
+    );
+
+    await withMockTmuxFixture(
+      'omx-startup-topology-missing-field-',
+      (logPath) => `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "${logPath}"
+if [ "$1" = "list-panes" ]; then printf '%%11\\tzsh\\n'; fi
+`,
+      async ({ logPath }) => {
+        assert.deepEqual(listPaneIds('leader:0'), []);
+        const log = await readFile(logPath, 'utf8');
+        assert.doesNotMatch(log, /set-option|split-window|resize-pane|select-layout|set-window-option|select-pane|send-keys/);
       },
     );
   });

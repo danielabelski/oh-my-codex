@@ -273,6 +273,7 @@ async function configureScaleUpTeamForDirectDispatch(teamName: string, cwd: stri
   config.tmux_session = `omx-team-${teamName}`;
   config.leader_pane_id = '%11';
   config.workers[0]!.pane_id = '%21';
+  config.workers[0]!.pid = 42421;
   await saveTeamConfig(config, cwd);
 
   const manifestPath = join(cwd, '.omx', 'state', 'team', teamName, 'manifest.v2.json');
@@ -827,6 +828,7 @@ exit 0
       config.tmux_session = 'omx-team-scale-up-role';
       config.leader_pane_id = '%11';
       config.workers[0]!.pane_id = '%21';
+      config.workers[0]!.pid = 42421;
       await saveTeamConfig(config, cwd);
 
       const manifestPath = join(cwd, '.omx', 'state', 'team', 'scale-up-role', 'manifest.v2.json');
@@ -1102,6 +1104,68 @@ printf '%s\\n' "$@" > '${capturePath}'
       else delete process.env.PATH;
       if (typeof previousBridge === 'string') process.env.OMX_RUNTIME_BRIDGE = previousBridge;
       else delete process.env.OMX_RUNTIME_BRIDGE;
+      await rm(cwd, { recursive: true, force: true });
+      await rm(fakeBinDir, { recursive: true, force: true });
+    }
+  });
+
+  it('retains the original pane/PID rollback debt when the new pane ID is reused before owner tagging', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-scale-up-owner-tag-reuse-'));
+    const fakeBinDir = await mkdtemp(join(tmpdir(), 'omx-scale-up-owner-tag-reuse-bin-'));
+    const tmuxLogPath = join(fakeBinDir, 'tmux.log');
+    const tmuxStubPath = join(fakeBinDir, 'tmux');
+    const previousPath = process.env.PATH;
+
+    try {
+      await writeFile(tmuxStubPath, [
+        '#!/bin/sh',
+        'set -eu',
+        `printf '%s\\n' "$*" >> "${tmuxLogPath}"`,
+        'case "${1:-}" in',
+        '  -V) echo "tmux 3.2a" ;;',
+        '  split-window) echo "%31" ;;',
+        '  list-panes)',
+        `    count_file="${join(fakeBinDir, 'proof-count')}"`,
+        '    count=0; [ ! -f "$count_file" ] || count=$(cat "$count_file")',
+        '    count=$((count + 1)); printf "%s" "$count" > "$count_file"',
+        '    if [ "$count" -le 3 ]; then',
+        "      printf '%s\\t%s\\t%s\\n' '%21' '0' '42421'",
+        "      printf '%s\\t%s\\t%s\\n' '%31' '0' '42424'",
+        '    elif [ "$count" -eq 4 ]; then',
+        "      printf '%s\\t%s\\t%s\\n' '%21' '0' '42421'",
+        "      printf '%s\\t%s\\t%s\\n' '%31' '0' '52424'",
+        '    else',
+        "      printf 'malformed pane snapshot\\n'",
+        '    fi',
+        '    ;;',
+        '  kill-pane|send-keys|capture-pane) ;;',
+        'esac',
+        'exit 0',
+        '',
+      ].join('\n'));
+      await chmod(tmuxStubPath, 0o755);
+      await writeFile(tmuxLogPath, '');
+      process.env.PATH = `${fakeBinDir}:${previousPath ?? ''}`;
+
+      const teamName = 'scale-up-owner-tag-reuse';
+      await initTeamState(teamName, 'task', 'executor', 1, cwd);
+      await configureScaleUpTeamForDirectDispatch(teamName, cwd);
+      const result = await scaleUp(teamName, 1, 'executor', [], cwd, {
+        OMX_TEAM_SCALING_ENABLED: '1', OMX_TEAM_SKIP_READY_WAIT: '1',
+      });
+
+      assert.equal(result.ok, false);
+      if (result.ok) return;
+      assert.match(result.error, /scale_up_rollback_cleanup_debt:pane_proof_unavailable:%31:malformed_snapshot/);
+      const config = await readTeamConfig(teamName, cwd);
+      assert.equal(config?.workers[1]?.pane_id, '%31');
+      assert.equal(config?.workers[1]?.pid, 42424);
+      const tmuxCommands = await readScaleUpTmuxLogCommands(tmuxLogPath);
+      assert.equal(tmuxCommands.some((command) => command.includes('set-option -p -t %31 @omx_team_pane_owner_id')), false);
+      assert.equal(tmuxCommands.some((command) => command.startsWith('split-window ')), true);
+    } finally {
+      if (typeof previousPath === 'string') process.env.PATH = previousPath;
+      else delete process.env.PATH;
       await rm(cwd, { recursive: true, force: true });
       await rm(fakeBinDir, { recursive: true, force: true });
     }
@@ -1602,6 +1666,7 @@ printf '%s\\n' "$@" > '${capturePath}'
       config.tmux_session = 'omx-team-scale-up-project-reasoning';
       config.leader_pane_id = '%11';
       config.workers[0]!.pane_id = '%21';
+      config.workers[0]!.pid = 42421;
       await saveTeamConfig(config, cwd);
 
       const manifestPath = join(cwd, '.omx', 'state', 'team', 'scale-up-project-reasoning', 'manifest.v2.json');
@@ -1714,6 +1779,7 @@ exit 0
       config.tmux_session = 'omx-team-rollback-worktree';
       config.leader_pane_id = '%11';
       config.workers[0]!.pane_id = '%21';
+      config.workers[0]!.pid = 42421;
       await saveTeamConfig(config, cwd);
 
       const manifestPath = join(cwd, '.omx', 'state', 'team', 'rollback-worktree', 'manifest.v2.json');
@@ -1807,6 +1873,7 @@ exit 0
       config.tmux_session = 'omx-team-canonical-root';
       config.leader_pane_id = '%11';
       config.workers[0]!.pane_id = '%21';
+      config.workers[0]!.pid = 42421;
       await saveTeamConfig(config, cwd);
 
       const manifestPath = join(cwd, '.omx', 'state', 'team', 'canonical-root', 'manifest.v2.json');
@@ -1911,6 +1978,7 @@ exit 0
       config.tmux_session = 'omx-team-frontier-role';
       config.leader_pane_id = '%11';
       config.workers[0]!.pane_id = '%21';
+      config.workers[0]!.pid = 42421;
       await saveTeamConfig(config, cwd);
 
       const manifestPath = join(cwd, '.omx', 'state', 'team', 'frontier-role', 'manifest.v2.json');
@@ -2003,6 +2071,7 @@ exit 0
       config.tmux_session = 'omx-team-mini-tuned-root';
       config.leader_pane_id = '%11';
       config.workers[0]!.pane_id = '%21';
+      config.workers[0]!.pid = 42421;
       await saveTeamConfig(config, cwd);
 
       const manifestPath = join(cwd, '.omx', 'state', 'team', 'mini-tuned-root', 'manifest.v2.json');
@@ -2094,6 +2163,7 @@ exit 0
       config.tmux_session = 'omx-team-scale-up-layout';
       config.leader_pane_id = '%11';
       config.workers[0]!.pane_id = '%21';
+      config.workers[0]!.pid = 42421;
       await saveTeamConfig(config, cwd);
 
       const manifestPath = join(cwd, '.omx', 'state', 'team', 'scale-up-layout', 'manifest.v2.json');
@@ -2201,6 +2271,69 @@ exit 0
       }
     });
   }
+
+  it('rejects an explicit worker split target without a persisted positive PID before any pane proof or effect', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-scale-up-missing-target-pid-'));
+    const fakeBinDir = await mkdtemp(join(tmpdir(), 'omx-scale-up-missing-target-pid-bin-'));
+    const tmuxLogPath = join(fakeBinDir, 'tmux.log');
+    const tmuxStubPath = join(fakeBinDir, 'tmux');
+    const previousPath = process.env.PATH;
+    try {
+      await writeFile(tmuxStubPath, ['#!/bin/sh', `printf '%s\\n' "$*" >> "${tmuxLogPath}"`, '[ "${1:-}" = "-V" ] && echo "tmux 3.2a"', 'exit 0', ''].join('\n'));
+      await chmod(tmuxStubPath, 0o755);
+      await writeFile(tmuxLogPath, '');
+      process.env.PATH = `${fakeBinDir}:${previousPath ?? ''}`;
+      const teamName = 'missing-target-pid';
+      await initTeamState(teamName, 'task', 'executor', 1, cwd);
+      await configureScaleUpTeamForDirectDispatch(teamName, cwd);
+      const config = await readTeamConfig(teamName, cwd);
+      assert.ok(config);
+      if (!config) return;
+      delete config.workers[0]!.pid;
+      await saveTeamConfig(config, cwd);
+      const result = await scaleUp(teamName, 1, 'executor', [], cwd, { OMX_TEAM_SCALING_ENABLED: '1', OMX_TEAM_SKIP_READY_WAIT: '1' });
+      assert.deepEqual(result, { ok: false, error: 'scale_up_split_target_pid_missing:%21' });
+      const tmuxCommands = await readScaleUpTmuxLogCommands(tmuxLogPath);
+      assert.equal(tmuxCommands.some((command) => command.startsWith('list-panes ')), false);
+      assert.equal(tmuxCommands.some((command) => command.startsWith('split-window ') || command.startsWith('set-option ')), false);
+    } finally {
+      if (typeof previousPath === 'string') process.env.PATH = previousPath;
+      else delete process.env.PATH;
+      await rm(cwd, { recursive: true, force: true });
+      await rm(fakeBinDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a PID-reused explicit split target at the first proof before any split or owner tag', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-scale-up-first-proof-reuse-'));
+    const fakeBinDir = await mkdtemp(join(tmpdir(), 'omx-scale-up-first-proof-reuse-bin-'));
+    const tmuxLogPath = join(fakeBinDir, 'tmux.log');
+    const tmuxStubPath = join(fakeBinDir, 'tmux');
+    const previousPath = process.env.PATH;
+    try {
+      await writeFile(tmuxStubPath, [
+        '#!/bin/sh', 'set -eu', `printf '%s\\n' "$*" >> "${tmuxLogPath}"`, 'case "${1:-}" in',
+        '  -V) echo "tmux 3.2a" ;;',
+        "  list-panes) printf '%s\\t%s\\t%s\\n' '%21' '0' '52421' ;;",
+        'esac', 'exit 0', '',
+      ].join('\n'));
+      await chmod(tmuxStubPath, 0o755);
+      await writeFile(tmuxLogPath, '');
+      process.env.PATH = `${fakeBinDir}:${previousPath ?? ''}`;
+      const teamName = 'first-proof-reuse';
+      await initTeamState(teamName, 'task', 'executor', 1, cwd);
+      await configureScaleUpTeamForDirectDispatch(teamName, cwd);
+      const result = await scaleUp(teamName, 1, 'executor', [], cwd, { OMX_TEAM_SCALING_ENABLED: '1', OMX_TEAM_SKIP_READY_WAIT: '1' });
+      assert.deepEqual(result, { ok: false, error: 'scale_up_split_target_pid_changed:%21:42421:52421' });
+      const tmuxCommands = await readScaleUpTmuxLogCommands(tmuxLogPath);
+      assert.equal(tmuxCommands.some((command) => command.startsWith('split-window ') || command.startsWith('set-option ')), false);
+    } finally {
+      if (typeof previousPath === 'string') process.env.PATH = previousPath;
+      else delete process.env.PATH;
+      await rm(cwd, { recursive: true, force: true });
+      await rm(fakeBinDir, { recursive: true, force: true });
+    }
+  });
 
   it('rolls back all preparation when the split target proof is lost immediately before split-window', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-scale-up-second-split-proof-'));
@@ -2452,6 +2585,7 @@ exit 0
       config.tmux_session = `omx-team-${teamName}`;
       config.leader_pane_id = '%11';
       config.workers[0]!.pane_id = '%21';
+      config.workers[0]!.pid = 45452;
       await saveTeamConfig(config, repo);
 
       const manifestPath = join(repo, '.omx', 'state', 'team', teamName, 'manifest.v2.json');
@@ -2563,6 +2697,7 @@ exit 0
       config.tmux_session = `omx-team-${teamName}`;
       config.leader_pane_id = '%11';
       config.workers[0]!.pane_id = '%21';
+      config.workers[0]!.pid = 46462;
       await saveTeamConfig(config, repo);
 
       const manifestPath = join(repo, '.omx', 'state', 'team', teamName, 'manifest.v2.json');

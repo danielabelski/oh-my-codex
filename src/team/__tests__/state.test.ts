@@ -279,6 +279,8 @@ describe('team state', () => {
       assert.equal(diskCfg.tmux_session, 'omx-team-team-1');
       assert.equal(diskCfg.lifecycle_profile, 'default');
       assert.equal(diskCfg.leader_pane_id, null);
+      assert.equal(diskCfg.leader_pane_pid, null);
+      assert.equal(diskCfg.hud_pane_pid, null);
       assert.equal(diskCfg.hud_pane_id, null);
       assert.equal(diskCfg.resize_hook_name, null);
       assert.equal(diskCfg.resize_hook_target, null);
@@ -827,6 +829,8 @@ exit 1
       assert.deepEqual(manifest?.worktree_mode, { enabled: true, detached: false, name: 'feature/team-meta' });
       assert.equal(manifest?.lifecycle_profile, 'default');
       assert.equal(manifest?.leader_pane_id, null);
+      assert.equal(manifest?.leader_pane_pid, null);
+      assert.equal(manifest?.hud_pane_pid, null);
       assert.equal(manifest?.hud_pane_id, null);
       assert.equal(manifest?.resize_hook_name, null);
       assert.equal(manifest?.resize_hook_target, null);

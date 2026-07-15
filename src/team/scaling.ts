@@ -537,14 +537,35 @@ export async function scaleUp(
       approvedExecutionGate.approvedContextSection,
       renderLeaderOwnedUltragoalContextSection(persistedUltragoalContext),
     );
-    const initialSplitTarget = config.workers.length > 0
-      ? (config.workers[config.workers.length - 1]?.pane_id ?? config.leader_pane_id ?? '')
-      : (config.leader_pane_id ?? '');
+    const initialSplitTargetCandidate = config.workers[config.workers.length - 1];
+    const initialSplitTargetWorker = initialSplitTargetCandidate?.pane_id?.trim()
+      ? initialSplitTargetCandidate
+      : undefined;
+    const initialSplitTarget = initialSplitTargetWorker?.pane_id ?? config.leader_pane_id ?? '';
+    const initialExpectedSplitTargetPid = initialSplitTargetWorker
+      ? initialSplitTargetWorker.pid
+      : config.leader_pane_pid;
+    if (
+      typeof initialExpectedSplitTargetPid !== 'number'
+      || !Number.isSafeInteger(initialExpectedSplitTargetPid)
+      || initialExpectedSplitTargetPid <= 0
+    ) {
+      return {
+        ok: false,
+        error: `scale_up_split_target_pid_missing:${initialSplitTarget}`,
+      };
+    }
     const initialSplitTargetProof = readExactPaneProofSync(initialSplitTarget);
     if (initialSplitTargetProof.status !== 'live') {
       return {
         ok: false,
         error: `scale_up_split_target_proof_unavailable:${initialSplitTarget}:${initialSplitTargetProof.reason}`,
+      };
+    }
+    if (initialSplitTargetProof.pid !== initialExpectedSplitTargetPid) {
+      return {
+        ok: false,
+        error: `scale_up_split_target_pid_changed:${initialSplitTarget}:${initialExpectedSplitTargetPid}:${initialSplitTargetProof.pid}`,
       };
     }
 
@@ -828,13 +849,19 @@ export async function scaleUp(
       // Freeze the split target and its identity before preparing any artifacts.
       // Later proof must establish that this exact pane process still owns the
       // target; a recycled pane ID must never become split authority.
-      const splitTargetWorker = config.workers[config.workers.length - 1];
+      const splitTargetCandidate = config.workers[config.workers.length - 1];
+      const splitTargetWorker = splitTargetCandidate?.pane_id?.trim() ? splitTargetCandidate : undefined;
       const splitTarget = splitTargetWorker?.pane_id ?? config.leader_pane_id ?? '';
-      const expectedSplitTargetPid = typeof splitTargetWorker?.pid === 'number'
-        && Number.isSafeInteger(splitTargetWorker.pid)
-        && splitTargetWorker.pid > 0
+      const expectedSplitTargetPid = splitTargetWorker
         ? splitTargetWorker.pid
-        : initialSplitTargetProof.pid;
+        : config.leader_pane_pid;
+      if (
+        typeof expectedSplitTargetPid !== 'number'
+        || !Number.isSafeInteger(expectedSplitTargetPid)
+        || expectedSplitTargetPid <= 0
+      ) {
+        return await rollbackScaleUp(`scale_up_split_target_pid_missing:${splitTarget}`);
+      }
       const splitDirection = splitTarget === (config.leader_pane_id ?? '') ? '-h' : '-v';
 
       nextIndex = workerIndex + 1;
@@ -1023,7 +1050,7 @@ export async function scaleUp(
 
       if (config.tmux_pane_owner_id) {
         try {
-          tagPaneTeamOwner(paneProof.paneId, config.tmux_pane_owner_id);
+          tagPaneTeamOwner(paneProof.paneId, config.tmux_pane_owner_id, paneProof.pid);
         } catch (error) {
           return await rollbackScaleUp(
             `Failed to tag tmux pane for ${workerName}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1046,7 +1073,7 @@ export async function scaleUp(
       const readyTimeoutMs = resolveWorkerReadyTimeoutMs(env);
       const skipReadyWait = env.OMX_TEAM_SKIP_READY_WAIT === '1';
       if (!skipReadyWait) {
-        const ready = waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId);
+        const ready = waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId, workerInfo.pid);
         if (!ready) {
           console.log(`[omx:scaling] Warning: worker ${workerName} did not become ready within timeout`);
         }
@@ -1178,8 +1205,8 @@ export async function scaleUp(
         }
       }
       // Retry dispatch once if a trust prompt is blocking the worker pane (fixes #393).
-      if (!outcome.ok && dismissTrustPromptIfPresent(sessionName, workerIndex, paneId)) {
-        waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId);
+      if (!outcome.ok && dismissTrustPromptIfPresent(sessionName, workerIndex, paneId, workerInfo.pid)) {
+        waitForWorkerReady(sessionName, workerIndex, readyTimeoutMs, paneId, workerInfo.pid);
         const retry = await notifyWorkerPaneOutcome(sessionName, workerIndex, triggerDirective.text, paneId, workerCli, workerInfo.pid);
         if (retry.ok) {
           outcome = retry;

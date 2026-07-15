@@ -368,23 +368,40 @@ export function applyCreatedInteractiveSessionToConfig(
   config.tmux_session = createdSession.name;
   config.leader_pane_id = createdSession.leaderPaneId;
   config.hud_pane_id = createdSession.hudPaneId;
+  config.leader_pane_pid = typeof createdSession.leaderPanePid === 'number' && Number.isSafeInteger(createdSession.leaderPanePid) && createdSession.leaderPanePid > 0
+    ? createdSession.leaderPanePid
+    : null;
+  config.hud_pane_pid = typeof createdSession.hudPanePid === 'number' && Number.isSafeInteger(createdSession.hudPanePid) && createdSession.hudPanePid > 0
+    ? createdSession.hudPanePid
+    : null;
   config.tmux_pane_owner_id = createdSession.teamPaneOwnerId;
   config.resize_hook_name = createdSession.resizeHookName;
   config.resize_hook_target = createdSession.resizeHookTarget;
   const paneIdsByIndex = createdSession.workerPaneIdsByIndex;
+  const panePidsByIndex = createdSession.workerPanePidsByIndex;
   if (paneIdsByIndex) {
     for (let i = 0; i < paneIdsByIndex.length; i++) {
       const paneId = paneIdsByIndex[i];
       if (!paneId) continue;
       workerPaneIds[i] = paneId;
-      if (config.workers[i]) config.workers[i].pane_id = paneId;
+      if (config.workers[i]) {
+        config.workers[i].pane_id = paneId;
+        const panePid = panePidsByIndex?.[i];
+        if (typeof panePid === 'number' && Number.isSafeInteger(panePid) && panePid > 0) config.workers[i].pid = panePid;
+
+      }
     }
     return;
   }
+
   for (let i = 0; i < createdSession.workerPaneIds.length; i++) {
     const paneId = createdSession.workerPaneIds[i];
     workerPaneIds[i] = paneId;
-    if (config.workers[i]) config.workers[i].pane_id = paneId;
+    if (config.workers[i]) {
+      config.workers[i].pane_id = paneId;
+      const panePid = createdSession.workerPanePidsByIndex?.[i];
+      if (typeof panePid === 'number' && Number.isSafeInteger(panePid) && panePid > 0) config.workers[i].pid = panePid;
+    }
   }
 }
 
@@ -2558,7 +2575,7 @@ function isValidGonePaneDescendantCleanupDebt(value: unknown): value is GonePane
       || (candidate.authorized_pane_pid as number) <= 0) return false;
     if (candidate.evidence === 'process_identity_unavailable') {
       const trackedPids = candidate.tracked_pids as number[];
-      if (!Array.isArray(candidate.tracked_pids) || trackedPids.length === 0
+      if (!Array.isArray(candidate.tracked_pids) || candidate.tracked_pids.length === 0
         || trackedPids.some((pid) => !Number.isSafeInteger(pid) || pid <= 0)
         || new Set(trackedPids).size !== trackedPids.length) return false;
       if (candidate.tracked_processes === undefined) return true;
@@ -2600,11 +2617,11 @@ async function reconcileGonePaneDescendantCleanupDebt(teamName: string, cwd: str
           probePidLiveness(pid) === 'gone' ? 'gone' as const : 'reused_or_unknown' as const,
         );
       }));
-      if (states.some((state) => state !== 'gone')) unresolved.push(entry);
+      if (states.some((state: string) => state !== 'gone')) unresolved.push(entry);
       continue;
     }
     const states: Array<'gone' | 'same' | 'reused_or_unknown'> = await Promise.all(entry.tracked_processes.map(probeProcessIdentity));
-    if (states.some((state) => state !== 'gone')) unresolved.push(entry);
+    if (states.some((state: string) => state !== 'gone')) unresolved.push(entry);
   }
   if (unresolved.length === 0) {
     await rm(debtPath, { force: true });
@@ -3412,6 +3429,8 @@ export async function startTeam(
       config.tmux_session = `prompt-${sanitized}`;
       config.leader_pane_id = null;
       config.hud_pane_id = null;
+      config.leader_pane_pid = null;
+      config.hud_pane_pid = null;
       config.resize_hook_name = null;
       config.resize_hook_target = null;
       for (let i = 1; i <= workerCount; i++) {
@@ -3501,7 +3520,7 @@ export async function startTeam(
       let startupReadyPromptObserved = false;
       if (workerLaunchMode === 'interactive' && !skipWorkerReadyWait && !initialPrompt && !startupDirectOutcome?.ok) {
         startupTiming.mark('ready_wait_start', { worker: workerName, pane_id: paneId });
-        const ready = await waitForWorkerReadyAsync(sessionName, workerIndex, workerReadyTimeoutMs, paneId);
+        const ready = await waitForWorkerReadyAsync(sessionName, workerIndex, workerReadyTimeoutMs, paneId, config!.workers[workerIndex - 1]?.pid);
         startupTiming.mark('ready_wait_end', { worker: workerName, pane_id: paneId, ok: ready });
         if (!ready) {
           const workerAlive = isWorkerPaneOpen(sessionName, workerIndex, paneId);
@@ -3563,8 +3582,8 @@ export async function startTeam(
           if (dispatchOutcome.ok) break;
           if (attempt < startupDispatchRetries) {
             if (workerLaunchMode === 'interactive') {
-              if (dismissTrustPromptIfPresent(sessionName, workerIndex, paneId)) {
-                await waitForWorkerReadyAsync(sessionName, workerIndex, workerReadyTimeoutMs, paneId);
+              if (dismissTrustPromptIfPresent(sessionName, workerIndex, paneId, config!.workers[workerIndex - 1]?.pid)) {
+                await waitForWorkerReadyAsync(sessionName, workerIndex, workerReadyTimeoutMs, paneId, config!.workers[workerIndex - 1]?.pid);
               } else {
                 await new Promise((resolve) => setTimeout(resolve, Math.max(0, startupRetryDelayS * 1000)));
               }
@@ -3699,15 +3718,19 @@ export async function startTeam(
           if (config) await saveTeamConfig(config, leaderCwd);
           assertPaneTeardownProofsAvailable('startup_rollback', paneProcessProofUnavailable);
         }
+        const rollbackPanePids = Object.fromEntries((config?.workers ?? [])
+          .filter((worker) => typeof worker.pane_id === 'string' && typeof worker.pid === 'number')
+          .map((worker) => [worker.pane_id as string, worker.pid as number]));
+        if (config?.hud_pane_id && typeof config.hud_pane_pid === 'number') {
+          rollbackPanePids[config.hud_pane_id] = config.hud_pane_pid;
+        }
         const rollbackPaneIds = [
           ...createdWorkerPaneIds,
-          config?.hud_pane_id,
+          ...(config?.hud_pane_id && typeof config.hud_pane_pid === 'number' ? [config.hud_pane_id] : []),
         ].filter((paneId): paneId is string => typeof paneId === 'string' && paneId.trim().startsWith('%'));
         const rollbackPaneTeardown = await teardownWorkerPanes(rollbackPaneIds, {
           leaderPaneId: createdLeaderPaneId,
-          expectedPanePids: Object.fromEntries((config?.workers ?? [])
-            .filter((worker) => typeof worker.pane_id === 'string' && typeof worker.pid === 'number')
-            .map((worker) => [worker.pane_id as string, worker.pid as number])),
+          expectedPanePids: rollbackPanePids,
         });
         const resolvedRollbackPaneIds = new Set([
           ...rollbackPaneTeardown.provenGonePaneIds,
@@ -3716,7 +3739,10 @@ export async function startTeam(
         if (config && (rollbackPaneTeardown.proofUnavailable.length > 0 || rollbackPaneTeardown.kill.failed > 0)) {
           config.workers = config.workers.filter((worker) => !worker.pane_id || !resolvedRollbackPaneIds.has(worker.pane_id));
           config.worker_count = config.workers.length;
-          if (config.hud_pane_id && resolvedRollbackPaneIds.has(config.hud_pane_id)) config.hud_pane_id = null;
+          if (config.hud_pane_id && resolvedRollbackPaneIds.has(config.hud_pane_id)) {
+            config.hud_pane_id = null;
+            config.hud_pane_pid = null;
+          }
         }
         if (rollbackPaneTeardown.proofUnavailable.length > 0) {
           if (config) {
@@ -4162,12 +4188,13 @@ export async function assignTask(
       });
       if (outcome.ok) break;
       if (attempt < maxAssignRetries && config.worker_launch_mode === 'interactive' && config.tmux_session) {
-        if (dismissTrustPromptIfPresent(config.tmux_session, workerInfo.index, workerInfo.pane_id)) {
+        if (dismissTrustPromptIfPresent(config.tmux_session, workerInfo.index, workerInfo.pane_id, workerInfo.pid)) {
           waitForWorkerReady(
             config.tmux_session,
             workerInfo.index,
             resolveWorkerReadyTimeoutMs(process.env),
             workerInfo.pane_id,
+            workerInfo.pid,
           );
         } else {
           await new Promise<void>(r => setTimeout(r, assignRetryDelayS * 1000));
@@ -4322,6 +4349,13 @@ export async function shutdownTeam(teamName: string, cwd: string, options: Shutd
   if (sharedSessionTopology?.status === 'unavailable') {
     throw new Error(`shutdown_shared_session_topology_unavailable:${sharedSessionTopology.detail}`);
   }
+  if (typeof config.hud_pane_id === 'string' && /^%[0-9]+$/.test(config.hud_pane_id)
+    && typeof config.hud_pane_pid === 'number' && Number.isSafeInteger(config.hud_pane_pid) && config.hud_pane_pid > 0) {
+    const persistedHudProof = readExactPaneProofSync(config.hud_pane_id);
+    if (persistedHudProof.status === 'live' && persistedHudProof.pid !== config.hud_pane_pid) {
+      throw new Error(`shutdown_shared_session_HUD_pane_identity_changed:${config.hud_pane_id}`);
+    }
+  }
   const dispatchPolicy = resolveDispatchPolicy(manifest?.policy, config.worker_launch_mode);
   const shutdownRequestTimes = new Map<string, string>();
 
@@ -4405,6 +4439,8 @@ export async function shutdownTeam(teamName: string, cwd: string, options: Shutd
   // 3. Force kill remaining workers
   const leaderPaneId = config.leader_pane_id;
   const hudPaneId = config.hud_pane_id;
+  const leaderPanePid = config.leader_pane_pid;
+  const hudPanePid = config.hud_pane_pid;
   if (config.worker_launch_mode === 'interactive') {
 
     const effectiveLeaderPaneId = sharedSessionTopology?.status === 'available'
@@ -4492,10 +4528,19 @@ export async function shutdownTeam(teamName: string, cwd: string, options: Shutd
       paneId: string,
       kind: 'HUD pane' | 'restore leader pane',
       allowLegacyMissingOwner: boolean,
+      expectedPid?: number | null,
     ): FrozenSharedPaneAuthorization => {
       const proof = readExactPaneProofSync(paneId);
       if (proof.status !== 'live') {
         throw new Error(`shutdown_shared_session_${kind.replaceAll(' ', '_')}_proof_unavailable:${paneId}`);
+      }
+      if (typeof expectedPid === 'number') {
+        if (!Number.isSafeInteger(expectedPid) || expectedPid <= 0) {
+          throw new Error(`shutdown_shared_session_${kind.replaceAll(' ', '_')}_pid_missing:${paneId}`);
+        }
+        if (proof.pid !== expectedPid) {
+          throw new Error(`shutdown_shared_session_${kind.replaceAll(' ', '_')}_identity_changed:${paneId}`);
+        }
       }
       const owner = readPaneTeamOwnerTagResult(paneId);
       if (owner.status === 'error') {
@@ -4529,11 +4574,33 @@ export async function shutdownTeam(teamName: string, cwd: string, options: Shutd
         throw new Error(`shutdown_shared_session_${kind.replaceAll(' ', '_')}_owner_changed:${authorization.paneId}`);
       }
     };
+    const persistedHudPaneId = typeof hudPaneId === 'string' && /^%[0-9]+$/.test(hudPaneId)
+      ? hudPaneId
+      : null;
+    const persistedLeaderPaneId = typeof leaderPaneId === 'string' && /^%[0-9]+$/.test(leaderPaneId)
+      ? leaderPaneId
+      : null;
+    if (persistedHudPaneId && effectiveHudPaneId === persistedHudPaneId && (typeof hudPanePid !== 'number' || !Number.isSafeInteger(hudPanePid) || hudPanePid <= 0)) {
+      throw new Error(`shutdown_shared_session_HUD_pane_pid_missing:${effectiveHudPaneId}`);
+    }
+    if (persistedLeaderPaneId && trustedHudRestoreLeaderPaneId === persistedLeaderPaneId && (typeof leaderPanePid !== 'number' || !Number.isSafeInteger(leaderPanePid) || leaderPanePid <= 0)) {
+      throw new Error(`shutdown_shared_session_restore_leader_pane_pid_missing:${trustedHudRestoreLeaderPaneId}`);
+    }
     const frozenHudAuthorization = sharedSessionTopology && effectiveHudPaneId
-      ? freezeSharedPaneAuthorization(effectiveHudPaneId, 'HUD pane', true)
+      ? freezeSharedPaneAuthorization(
+        effectiveHudPaneId,
+        'HUD pane',
+        true,
+        effectiveHudPaneId === persistedHudPaneId ? hudPanePid : undefined,
+      )
       : null;
     const frozenRestoreLeaderAuthorization = sharedSessionTopology && trustedHudRestoreLeaderPaneId
-      ? freezeSharedPaneAuthorization(trustedHudRestoreLeaderPaneId, 'restore leader pane', true)
+      ? freezeSharedPaneAuthorization(
+        trustedHudRestoreLeaderPaneId,
+        'restore leader pane',
+        true,
+        trustedHudRestoreLeaderPaneId === persistedLeaderPaneId ? leaderPanePid : undefined,
+      )
       : null;
 
     const assertCompleteSharedWorkerPaneProofs = (allowResolvedGone = false): void => {
@@ -4651,7 +4718,12 @@ export async function shutdownTeam(teamName: string, cwd: string, options: Shutd
         }
       }
       if (restoredHudPaneId) {
+        const restoredHudProof = readExactPaneProofSync(restoredHudPaneId);
+        if (restoredHudProof.status !== 'live') {
+          throw new Error(`shutdown_restored_hud_pane_proof_unavailable:${restoredHudPaneId}`);
+        }
         config.hud_pane_id = restoredHudPaneId;
+        config.hud_pane_pid = restoredHudProof.pid;
         await saveTeamConfig(config, cwd);
       }
     }

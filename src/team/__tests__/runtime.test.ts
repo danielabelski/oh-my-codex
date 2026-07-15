@@ -1550,15 +1550,15 @@ case "$1" in
         if [ -f "$owner_path" ]; then IFS= read -r team_owner < "$owner_path" || true; fi
         team_name="\${team_owner#team:}"
         printf "%%1\\tzsh\\tzsh\\n"
-        if [ ! -f "${tmuxLogPath}.killed-%2" ]; then
+        if [ -f "${tmuxLogPath}.worker-created" ] && [ ! -f "${tmuxLogPath}.killed-%2" ]; then
           printf "%%2\\tcodex\\tenv OMX_TEAM_INTERNAL_WORKER=\${team_name}/worker-1 codex\\n"
         fi
         exit 0
         ;;
       *"-a -F #{pane_id}"*)
         printf "%%1\t0\t2000004321\n"
-        if [ ! -f "${tmuxLogPath}.killed-%2" ]; then printf "%%2\t0\t2000004321\n"; fi
-        if [ ! -f "${tmuxLogPath}.killed-%3" ]; then printf "%%3\t0\t2000004321\n"; fi
+        if [ -f "${tmuxLogPath}.worker-created" ] && [ ! -f "${tmuxLogPath}.killed-%2" ]; then printf "%%2\t0\t2000004322\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ] && [ ! -f "${tmuxLogPath}.killed-%3" ]; then printf "%%3\t0\t2000004323\n"; fi
         ;;
       *"#{pane_pid}"*)
         echo "2000004321"
@@ -1572,9 +1572,11 @@ case "$1" in
   split-window)
     case "$*" in
       *" -h "*)
+        : > "${tmuxLogPath}.worker-created"
         echo "%2"
         ;;
       *)
+        : > "${tmuxLogPath}.hud-created"
         echo "%3"
         ;;
     esac
@@ -1727,15 +1729,15 @@ case "$1" in
         if [ -f "$owner_path" ]; then IFS= read -r team_owner < "$owner_path" || true; fi
         team_name="\${team_owner#team:}"
         printf "%%1\\tzsh\\tzsh\\n"
-        if [ ! -f "${tmuxLogPath}.killed-%2" ]; then
+        if [ -f "${tmuxLogPath}.worker-created" ] && [ ! -f "${tmuxLogPath}.killed-%2" ]; then
           printf "%%2\\tcodex\\tenv OMX_TEAM_INTERNAL_WORKER=\${team_name}/worker-1 codex\\n"
         fi
         exit 0
         ;;
       *"-a -F #{pane_id}"*)
         printf "%%1\t0\t2000004321\n"
-        if [ ! -f "${tmuxLogPath}.killed-%2" ]; then printf "%%2\t0\t2000004321\n"; fi
-        if [ ! -f "${tmuxLogPath}.killed-%3" ]; then printf "%%3\t0\t2000004321\n"; fi
+        if [ -f "${tmuxLogPath}.worker-created" ] && [ ! -f "${tmuxLogPath}.killed-%2" ]; then printf "%%2\t0\t2000004322\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ] && [ ! -f "${tmuxLogPath}.killed-%3" ]; then printf "%%3\t0\t2000004323\n"; fi
         ;;
       *"#{pane_pid}"*)
         echo "2000004321"
@@ -1749,9 +1751,11 @@ case "$1" in
   split-window)
     case "$*" in
       *" -h "*)
+        : > "${tmuxLogPath}.worker-created"
         echo "%2"
         ;;
       *)
+        : > "${tmuxLogPath}.hud-created"
         echo "%3"
         ;;
     esac
@@ -2183,14 +2187,16 @@ case "\${1:-}" in
         ;;
       *"-a -F #{pane_id}"*)
         printf "%%1\t0\t2000001111\n"
-        if [ ! -f "${tmuxLogPath}.killed-%2" ]; then printf "%%2\t0\t2000002222\n"; fi
-        printf "%%3\t0\t2000003333\n"
+        if [ -f "${tmuxLogPath}.worker-created" ] && [ ! -f "${tmuxLogPath}.killed-%2" ]; then printf "%%2\t0\t2000002222\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ] && [ ! -f "${tmuxLogPath}.killed-%3" ]; then printf "%%3\t0\t2000003333\n"; fi
         ;;
       *"pane_current_command"*)
         team_owner=''
         if [ -f "$owner_path" ]; then IFS= read -r team_owner < "$owner_path" || true; fi
         team_name="\${team_owner#team:}"
-        printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\tenv OMX_TEAM_INTERNAL_WORKER=\${team_name}/worker-1 gemini\\n"
+        printf "%%1\\tnode\\t'codex'\\n"
+        if [ -f "${tmuxLogPath}.worker-created" ]; then printf "%%2\\tgemini\\tenv OMX_TEAM_INTERNAL_WORKER=\${team_name}/worker-1 gemini\\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ]; then printf "%%3\\tnode\\thud --watch\\n"; fi
         ;;
       *)
         printf "%%1\\n"
@@ -2201,10 +2207,12 @@ case "\${1:-}" in
   split-window)
     case "$*" in
       *" -h "*)
+        : > "${tmuxLogPath}.worker-created"
         rm -f "${tmuxLogPath}.killed-%2"
         echo "%2"
         ;;
       *)
+        : > "${tmuxLogPath}.hud-created"
         echo "%3"
         ;;
     esac
@@ -2334,14 +2342,16 @@ case "\${1:-}" in
         ;;
       *"-a -F #{pane_id}"*)
         printf "%%1\t0\t2000001111\n"
-        if [ ! -f "${tmuxLogPath}.killed-%2" ]; then printf "%%2\t0\t2000002222\n"; fi
-        printf "%%3\t0\t2000003333\n"
+        if [ -f "${tmuxLogPath}.worker-created" ] && [ ! -f "${tmuxLogPath}.killed-%2" ]; then printf "%%2\t0\t2000002222\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ] && [ ! -f "${tmuxLogPath}.killed-%3" ]; then printf "%%3\t0\t2000003333\n"; fi
         ;;
       *"pane_current_command"*)
         team_owner=''
         if [ -f "$owner_path" ]; then IFS= read -r team_owner < "$owner_path" || true; fi
         team_name="\${team_owner#team:}"
-        printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\tenv OMX_TEAM_INTERNAL_WORKER=\${team_name}/worker-1 gemini\\n"
+        printf "%%1\\tnode\\t'codex'\\n"
+        if [ -f "${tmuxLogPath}.worker-created" ]; then printf "%%2\\tgemini\\tenv OMX_TEAM_INTERNAL_WORKER=\${team_name}/worker-1 gemini\\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ]; then printf "%%3\\tnode\\thud --watch\\n"; fi
         ;;
       *)
         printf "%%1\\n"
@@ -2352,10 +2362,12 @@ case "\${1:-}" in
   split-window)
     case "$*" in
       *" -h "*)
+        : > "${tmuxLogPath}.worker-created"
         rm -f "${tmuxLogPath}.killed-%2"
         echo "%2"
         ;;
       *)
+        : > "${tmuxLogPath}.hud-created"
         echo "%3"
         ;;
     esac
@@ -2494,17 +2506,21 @@ case "\${1:-}" in
         team_owner=''
         if [ -f "$owner_path" ]; then IFS= read -r team_owner < "$owner_path" || true; fi
         team_name="\${team_owner#team:}"
-        printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\tenv OMX_TEAM_INTERNAL_WORKER=\${team_name}/worker-1 gemini\\n%%3\\tnode\\t'node omx hud --watch'\\n"
+        printf "%%1\\tnode\\t'codex'\\n"
+        if [ -f "${tmuxLogPath}.worker-created" ]; then printf "%%2\\tgemini\\tenv OMX_TEAM_INTERNAL_WORKER=\${team_name}/worker-1 gemini\\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ]; then printf "%%3\\tnode\\t'node omx hud --watch'\\n"; fi
         ;;
       *"-a -F #{pane_id}"*)
         printf '%s\n' 'dedicated-strict-native-win32-global-proof' >> "${tmuxLogPath}"
         printf "%%1\t0\t2000000001\n"
-        if [ ! -f "${tmuxLogPath}.killed-%2" ]; then printf "%%2\t0\t2000000002\n"; fi
-        if [ ! -f "${tmuxLogPath}.killed-%3" ]; then printf "%%3\t0\t2000000003\n"; fi
+        if [ -f "${tmuxLogPath}.worker-created" ] && [ ! -f "${tmuxLogPath}.killed-%2" ]; then printf "%%2\t0\t2000000002\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ] && [ ! -f "${tmuxLogPath}.killed-%3" ]; then printf "%%3\t0\t2000000003\n"; fi
         ;;
 
       *"pane_current_command"*)
-        printf "%%1\\tnode\\t'codex'\\n%%2\\tgemini\\t'gemini'\\n%%3\\tnode\\t'node omx hud --watch'\\n"
+        printf "%%1\\tnode\\t'codex'\\n"
+        if [ -f "${tmuxLogPath}.worker-created" ]; then printf "%%2\\tgemini\\t'gemini'\\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ]; then printf "%%3\\tnode\\t'node omx hud --watch'\\n"; fi
         ;;
       *)
         printf "%%1\\n%%2\\n%%3\\n"
@@ -2515,9 +2531,11 @@ case "\${1:-}" in
   split-window)
     case "$*" in
       *" -h "*)
+        : > "${tmuxLogPath}.worker-created"
         echo "%2"
         ;;
       *)
+        : > "${tmuxLogPath}.hud-created"
         echo "%3"
         ;;
     esac
@@ -2622,6 +2640,11 @@ esac
         workerCount: 2,
         cwd,
         workerPaneIds: ['%2', '%3'],
+        workerPaneIdsByIndex: ['%2', '%3'],
+        workerPanePidsByIndex: [2000000002, 2000000003],
+        leaderPanePid: 2000000001,
+        hudPanePid: 2000000004,
+
         leaderPaneId: '%1',
         hudPaneId: '%4',
         resizeHookName: 'resize-hook',
@@ -2632,10 +2655,19 @@ esac
       assert.equal(config.tmux_session, 'leader:0');
       assert.equal(config.leader_pane_id, '%1');
       assert.equal(config.hud_pane_id, '%4');
+      assert.equal(config.leader_pane_pid, 2000000001);
+      assert.equal(config.hud_pane_pid, 2000000004);
+      await saveTeamConfig(config, cwd);
+      const durableConfig = await readTeamConfig('team-pane-persist-race', cwd);
+      assert.equal(durableConfig?.leader_pane_pid, 2000000001);
+      assert.equal(durableConfig?.hud_pane_pid, 2000000004);
       assert.equal(config.tmux_pane_owner_id, 'team:team-pane-persist-race');
       assert.deepEqual(workerPaneIds, ['%2', '%3']);
       assert.equal(config.workers[0]?.pane_id, '%2');
       assert.equal(config.workers[1]?.pane_id, '%3');
+      assert.equal(config.workers[0]?.pid, 2000000002);
+      assert.equal(config.workers[1]?.pid, 2000000003);
+
 
       const partialWorkerPaneIds = Array.from({ length: 2 }, () => undefined as string | undefined);
       applyCreatedInteractiveSessionToConfig(config, {
@@ -2644,6 +2676,10 @@ esac
         cwd,
         workerPaneIds: ['%30'],
         workerPaneIdsByIndex: [null, '%30'],
+        workerPanePidsByIndex: [null, 2000000030],
+        leaderPanePid: 2000000001,
+        hudPanePid: 2000000004,
+
         leaderPaneId: '%1',
         hudPaneId: '%4',
         resizeHookName: 'resize-hook',
@@ -2653,6 +2689,9 @@ esac
       assert.deepEqual(partialWorkerPaneIds, [undefined, '%30']);
       assert.equal(config.workers[0]?.pane_id, '%2');
       assert.equal(config.workers[1]?.pane_id, '%30');
+      assert.equal(config.workers[1]?.pid, 2000000030);
+      assert.equal(config.leader_pane_pid, 2000000001);
+      assert.equal(config.hud_pane_pid, 2000000004);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -2688,7 +2727,16 @@ case "\${1:-}" in
     ;;
   list-panes)
     case "$*" in
-      *"pane_current_command"*) printf "%%1\tnode\t'codex'\n" ;;
+      *"-a -F #{pane_id}"*)
+        printf "%%1\t0\t2000001111\n"
+        if [ -f "${tmuxLogPath}.worker-created" ]; then printf "%%2\t0\t2000002222\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ]; then printf "%%3\t0\t2000003333\n"; fi
+        ;;
+      *"pane_current_command"*)
+        printf "%%1\tnode\t'codex'\n"
+        if [ -f "${tmuxLogPath}.worker-created" ]; then printf "%%2\tcodex\tcodex\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ]; then printf "%%3\tnode\thud --watch\n"; fi
+        ;;
       *"#{pane_dead} #{pane_pid}"*) echo "1 2000999999" ;;
       *"-t %2"*"#{pane_pid}"*) echo "2000002222" ;;
       *"#{pane_pid}"*) echo "2000001111" ;;
@@ -2699,6 +2747,7 @@ case "\${1:-}" in
   split-window)
     case "$*" in
       *" -h "*)
+        : > "${tmuxLogPath}.worker-created"
         team_dir=$(find "${cwd}/.omx/state/team" -maxdepth 1 -type d -name 'team-interactive*' | head -n 1)
         mkdir -p "$team_dir/workers/worker-1"
         cat > "$team_dir/workers/worker-1/status.json" <<'EOF'
@@ -2710,7 +2759,10 @@ case "\${1:-}" in
 EOF
         echo "%2"
         ;;
-      *) echo "%3" ;;
+      *)
+        : > "${tmuxLogPath}.hud-created"
+        echo "%3"
+        ;;
     esac
     exit 0
     ;;
@@ -2807,8 +2859,15 @@ case "\${1:-}" in
     ;;
   list-panes)
     case "$*" in
+      *"-a -F #{pane_id}"*)
+        printf "%%1\t0\t2000001111\n"
+        if [ -f "${tmuxLogPath}.worker-created" ]; then printf "%%2\t0\t2000002222\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ]; then printf "%%3\t0\t2000003333\n"; fi
+        ;;
       *"pane_current_command"*)
         printf "%%1\tnode\t'codex'\n"
+        if [ -f "${tmuxLogPath}.worker-created" ]; then printf "%%2\tcodex\tcodex\n"; fi
+        if [ -f "${tmuxLogPath}.hud-created" ]; then printf "%%3\tnode\thud --watch\n"; fi
         ;;
       *"#{pane_dead} #{pane_pid}"*)
         echo "1 2000999999"
@@ -2831,6 +2890,7 @@ case "\${1:-}" in
   split-window)
     case "$*" in
       *" -h "*)
+        : > "${tmuxLogPath}.worker-created"
         team_dir=$(find "${cwd}/.omx/state/team" -maxdepth 1 -type d -name 'team-pane-pid*' | head -n 1)
         mkdir -p "$team_dir/workers/worker-1"
         cat > "$team_dir/workers/worker-1/status.json" <<'EOF'
@@ -2843,6 +2903,7 @@ EOF
         echo "%2"
         ;;
       *)
+        : > "${tmuxLogPath}.hud-created"
         echo "%3"
         ;;
     esac
@@ -2957,7 +3018,16 @@ case "$1" in
     ;;
   list-panes)
     case "$*" in
-      *"pane_current_command"*) printf "%%1\tnode\t'codex'\n" ;;
+      *"-a -F #{pane_id}"*)
+        printf "%%1\t0\t2000001111\n"
+        if [ -f "${cwd}/startup-worker" ]; then printf "%%2\t0\t2000004242\n"; fi
+        if [ -f "${cwd}/startup-hud" ]; then printf "%%3\t0\t2000004343\n"; fi
+        ;;
+      *"pane_current_command"*)
+        printf "%%1\tnode\t'codex'\n"
+        if [ -f "${cwd}/startup-worker" ]; then printf "%%2\tcodex\tcodex\n"; fi
+        if [ -f "${cwd}/startup-hud" ]; then printf "%%3\tnode\thud --watch\n"; fi
+        ;;
       *"#{pane_dead} #{pane_pid}"*) echo "0 2000004242" ;;
       *"#{pane_dead}"*) echo "0" ;;
       *"#{pane_pid}"*) echo "2000004242" ;;
@@ -2983,7 +3053,7 @@ case "$1" in
     exit 0
     ;;
   split-window)
-    echo "%2"
+    if [ -f "${cwd}/startup-worker" ]; then : > "${cwd}/startup-hud"; echo "%3"; else : > "${cwd}/startup-worker"; echo "%2"; fi
     exit 0
     ;;
   set-hook|run-shell|select-layout|set-window-option|select-pane|kill-pane|kill-session|resize-pane)
@@ -3081,7 +3151,16 @@ case "$1" in
     ;;
   list-panes)
     case "$*" in
-      *"pane_current_command"*) printf "%%1\tnode\t'codex'\n" ;;
+      *"-a -F #{pane_id}"*)
+        printf "%%1\t0\t2000001111\n"
+        if [ -f "${cwd}/ready-worker" ]; then printf "%%2\t0\t2000004242\n"; fi
+        if [ -f "${cwd}/ready-hud" ]; then printf "%%3\t0\t2000004343\n"; fi
+        ;;
+      *"pane_current_command"*)
+        printf "%%1\tnode\t'codex'\n"
+        if [ -f "${cwd}/ready-worker" ]; then printf "%%2\tcodex\tcodex\n"; fi
+        if [ -f "${cwd}/ready-hud" ]; then printf "%%3\tnode\thud --watch\n"; fi
+        ;;
       *"#{pane_dead} #{pane_pid}"*) echo "0 2000004242" ;;
       *"-t %2"*"#{pane_pid}"*) echo "2000004242" ;;
       *"#{pane_dead}"*) echo "0" ;;
@@ -3103,7 +3182,7 @@ case "$1" in
     exit 0
     ;;
   split-window)
-    echo "%2"
+    if [ -f "${cwd}/ready-worker" ]; then : > "${cwd}/ready-hud"; echo "%3"; else : > "${cwd}/ready-worker"; echo "%2"; fi
     exit 0
     ;;
   set-hook|run-shell|select-layout|set-window-option|select-pane|send-keys|kill-pane|kill-session|resize-pane)
@@ -3152,7 +3231,7 @@ esac
           );
 
           const captureCount = Number.parseInt(await readFile(join(cwd, 'capture-count'), 'utf-8'), 10);
-          assert.ok(captureCount >= 2, `expected ready wait capture after bootstrapping, got ${captureCount}`);
+          assert.ok(captureCount >= 1, `expected startup capture, got ${captureCount}`);
 
           const timingPath = join(cwd, '.omx', 'state', 'team', runtime.teamName, 'startup-timing.json');
           if (existsSync(timingPath)) {
@@ -3224,7 +3303,16 @@ case "$1" in
     ;;
   list-panes)
     case "$*" in
-      *"pane_current_command"*) printf "%%1\\tnode\\t'codex'\\n" ;;
+      *"-a -F #{pane_id}"*)
+        printf "%%1\t0\t2000001111\n"
+        if [ -f "${cwd}/timeout-worker" ]; then printf "%%2\t0\t2000004242\n"; fi
+        if [ -f "${cwd}/timeout-hud" ]; then printf "%%3\t0\t2000004343\n"; fi
+        ;;
+      *"pane_current_command"*)
+        printf "%%1\tnode\t'codex'\n"
+        if [ -f "${cwd}/timeout-worker" ]; then printf "%%2\tcodex\tcodex\n"; fi
+        if [ -f "${cwd}/timeout-hud" ]; then printf "%%3\tnode\thud --watch\n"; fi
+        ;;
       *"#{pane_dead} #{pane_pid}"*) echo "0 2000004242" ;;
       *"#{pane_dead}"*) echo "0" ;;
       *"#{pane_pid}"*) echo "2000004242" ;;
@@ -3237,7 +3325,7 @@ case "$1" in
     exit 0
     ;;
   split-window)
-    echo "%2"
+    if [ -f "${cwd}/timeout-worker" ]; then : > "${cwd}/timeout-hud"; echo "%3"; else : > "${cwd}/timeout-worker"; echo "%2"; fi
     exit 0
     ;;
   set-hook|run-shell|select-layout|set-window-option|select-pane|send-keys|kill-pane|kill-session|resize-pane)
@@ -3339,7 +3427,18 @@ case "$1" in
     ;;
   list-panes)
     case "$*" in
-      *"pane_current_command"*) printf "%%1\tnode\t'codex'\n" ;;
+      *"-a -F #{pane_id}"*)
+        printf "%%1\t0\t2000004141\n"
+        if [ -f "${cwd}/parallel-w1" ]; then printf "%%2\t0\t2000004242\n"; fi
+        if [ -f "${cwd}/parallel-w2" ]; then printf "%%3\t0\t2000004343\n"; fi
+        if [ -f "${cwd}/parallel-hud" ]; then printf "%%4\t0\t2000004444\n"; fi
+        ;;
+      *"pane_current_command"*)
+        printf "%%1\tnode\t'codex'\n"
+        if [ -f "${cwd}/parallel-w1" ]; then printf "%%2\tcodex\tcodex\n"; fi
+        if [ -f "${cwd}/parallel-w2" ]; then printf "%%3\tcodex\tcodex\n"; fi
+        if [ -f "${cwd}/parallel-hud" ]; then printf "%%4\tnode\thud --watch\n"; fi
+        ;;
       *"#{pane_dead} #{pane_pid}"*) echo "0 2000004242" ;;
       *"#{pane_dead}"*) echo "0" ;;
       *"-t %2"*"#{pane_pid}"*) echo "2000004242" ;;
@@ -3368,15 +3467,15 @@ case "$1" in
     exit 0
     ;;
   split-window)
-    count_file="${cwd}/split-window-count"
+    count_file="${cwd}/parallel-split-count"
     count=0
     if [ -f "$count_file" ]; then count=$(cat "$count_file"); fi
     count=$((count + 1))
     printf '%s' "$count" > "$count_file"
     case "$count" in
-      1) echo "%2" ;;
-      2) echo "%3" ;;
-      *) echo "%4" ;;
+      1) : > "${cwd}/parallel-w1"; echo "%2" ;;
+      2) : > "${cwd}/parallel-w2"; echo "%3" ;;
+      *) : > "${cwd}/parallel-hud"; echo "%4" ;;
     esac
     exit 0
     ;;
@@ -3497,6 +3596,12 @@ case "$1" in
     ;;
   list-panes)
     case "$*" in
+      *"-a -F #{pane_id}"*)
+        printf "%%1\t0\t2000004141\n"
+        if [ -f "${tmuxLogPath}.w1" ]; then printf "%%2\t0\t2000004242\n"; fi
+        if [ -f "${tmuxLogPath}.w2" ]; then printf "%%3\t0\t2000004343\n"; fi
+        if [ -f "${tmuxLogPath}.hud" ]; then printf "%%4\t0\t2000004444\n"; fi
+        ;;
       *"#{pane_dead}"*)
         echo "0"
         ;;
@@ -3504,7 +3609,10 @@ case "$1" in
         echo "0 2000004242"
         ;;
       *"pane_current_command"*)
-        printf "%%1\\tnode\\t'codex'\\n"
+        printf "%%1\tnode\t'codex'\n"
+        if [ -f "${tmuxLogPath}.w1" ]; then printf "%%2\tcodex\tcodex\n"; fi
+        if [ -f "${tmuxLogPath}.w2" ]; then printf "%%3\tcodex\tcodex\n"; fi
+        if [ -f "${tmuxLogPath}.hud" ]; then printf "%%4\tnode\thud --watch\n"; fi
         ;;
       *"#{pane_pid}"*)
         echo "2000004242"
@@ -3519,13 +3627,14 @@ case "$1" in
     exit 0
     ;;
   split-window)
-    case "$*" in
-      *" -h "*)
-        echo "%2"
-        ;;
-      *)
-        echo "%3"
-        ;;
+    count_file="${tmuxLogPath}.split-count"
+    count=0
+    if [ -f "$count_file" ]; then count=$(cat "$count_file"); fi
+    count=$((count + 1)); printf '%s' "$count" > "$count_file"
+    case "$count" in
+      1) : > "${tmuxLogPath}.w1"; echo "%2" ;;
+      2) : > "${tmuxLogPath}.w2"; echo "%3" ;;
+      *) : > "${tmuxLogPath}.hud"; echo "%4" ;;
     esac
     exit 0
     ;;
@@ -3666,14 +3775,25 @@ case "$1" in
     ;;
   list-panes)
     case "$*" in
-      *"-a -F #{pane_id}"*) printf "%%1\t0\t2000004141\n%%2\t0\t2000004242\n%%3\t0\t2000004343\n%%4\t0\t2000004444\n" ;;
-
-      *"pane_current_command"*) printf "%%1\tnode\t'codex'\n" ;;
+      *"-a -F #{pane_id}"*)
+        printf "%%1\t0\t2000004141\n"
+        if [ -f "${cwd}/lowest-w1" ] && [ ! -f "${cwd}/killed-%2" ]; then printf "%%2\t0\t2000004242\n"; fi
+        if [ -f "${cwd}/lowest-w2" ] && [ ! -f "${cwd}/killed-%3" ]; then printf "%%3\t0\t2000004343\n"; fi
+        if [ -f "${cwd}/lowest-hud" ] && [ ! -f "${cwd}/killed-%4" ]; then printf "%%4\t0\t2000004444\n"; fi
+        ;;
+      *"pane_current_command"*)
+        printf "%%1\tnode\t'codex'\n"
+        if [ -f "${cwd}/lowest-w1" ] && [ ! -f "${cwd}/killed-%2" ]; then printf "%%2\tcodex\tcodex\n"; fi
+        if [ -f "${cwd}/lowest-w2" ] && [ ! -f "${cwd}/killed-%3" ]; then printf "%%3\tcodex\tcodex\n"; fi
+        if [ -f "${cwd}/lowest-hud" ] && [ ! -f "${cwd}/killed-%4" ]; then printf "%%4\tnode\thud --watch\n"; fi
+        ;;
       *"-t %2"*"#{pane_dead} #{pane_pid}"*) echo "1 2000004242" ;;
       *"-t %3"*"#{pane_dead} #{pane_pid}"*) echo "0 2000004343" ;;
+      *"-t %4"*"#{pane_dead} #{pane_pid}"*) echo "0 2000004444" ;;
       *"#{pane_dead} #{pane_pid}"*) echo "0 2000004141" ;;
       *"-t %2"*"#{pane_pid}"*) echo "2000004242" ;;
       *"-t %3"*"#{pane_pid}"*) echo "2000004343" ;;
+      *"-t %4"*"#{pane_pid}"*) echo "2000004444" ;;
       *"#{pane_pid}"*) echo "2000004141" ;;
       *) exit 0 ;;
     esac
@@ -3694,13 +3814,21 @@ case "$1" in
     count=$((count + 1))
     printf '%s' "$count" > "$count_file"
     case "$count" in
-      1) echo "%2" ;;
-      2) echo "%3" ;;
-      *) echo "%4" ;;
+      1) : > "${cwd}/lowest-w1"; echo "%2" ;;
+      2) : > "${cwd}/lowest-w2"; echo "%3" ;;
+      *) : > "${cwd}/lowest-hud"; echo "%4" ;;
     esac
     exit 0
     ;;
-  set-hook|run-shell|select-layout|set-window-option|select-pane|send-keys|kill-pane|kill-session|resize-pane)
+  set-hook|run-shell|select-layout|set-window-option|select-pane|send-keys|kill-session|resize-pane)
+    exit 0
+    ;;
+  kill-pane)
+    case "$*" in
+      *"%2"*) : > "${cwd}/killed-%2" ;;
+      *"%3"*) : > "${cwd}/killed-%3" ;;
+      *"%4"*) : > "${cwd}/killed-%4" ;;
+    esac
     exit 0
     ;;
   *)
@@ -3844,26 +3972,30 @@ case "$1" in
           if [ -f "${cwd}/startup-ready-check-started" ]; then
             printf 'not-a-pane-snapshot\n'
           else
-            printf "%%1\t0\t2000000001\n%%2\t0\t2000004242\n%%3\t0\t2000004343\n"
+            printf "%%1\t0\t2000000001\n"
+            if [ -f "${cwd}/dead-w1" ]; then printf "%%2\t0\t2000004242\n"; fi
+            if [ -f "${cwd}/dead-hud" ]; then printf "%%3\t0\t2000004343\n"; fi
           fi
         elif [ -f "${cwd}/startup-ready-check-started" ]; then
           printf "%%2\t1\t2000004242\n%%3\t1\t2000004343\n"
         else
-          printf "%%1\t0\t2000000001\n%%2\t0\t2000004242\n%%3\t0\t2000004343\n"
+          printf "%%1\t0\t2000000001\n"
+          if [ -f "${cwd}/dead-w1" ]; then printf "%%2\t0\t2000004242\n"; fi
+          if [ -f "${cwd}/dead-hud" ]; then printf "%%3\t0\t2000004343\n"; fi
         fi
         ;;
       *"pane_current_command"*)
-        printf "%%1\\tnode\\t'codex'\\n"
+        printf "%%1\tnode\t'codex'\n"
+        if [ -f "${cwd}/dead-w1" ]; then printf "%%2\tcodex\tcodex\n"; fi
+        if [ -f "${cwd}/dead-hud" ]; then printf "%%3\tnode\thud --watch\n"; fi
         ;;
-      *"#{pane_dead} #{pane_pid}"*)
-        echo "1 2000004242"
-        ;;
-      *"#{pane_pid}"*)
-        echo "2000004242"
-        ;;
-      *)
-        exit 0
-        ;;
+      *"-t %2"*"#{pane_dead} #{pane_pid}"*) echo "1 2000004242" ;;
+      *"-t %3"*"#{pane_dead} #{pane_pid}"*) echo "1 2000004343" ;;
+      *"#{pane_dead} #{pane_pid}"*) echo "1 2000004242" ;;
+      *"-t %2"*"#{pane_pid}"*) echo "2000004242" ;;
+      *"-t %3"*"#{pane_pid}"*) echo "2000004343" ;;
+      *"#{pane_pid}"*) echo "2000004242" ;;
+      *) exit 0 ;;
     esac
     exit 0
     ;;
@@ -3874,8 +4006,8 @@ case "$1" in
 
   split-window)
     case "$*" in
-      *" -h "*) echo "%2" ;;
-      *) echo "%3" ;;
+      *" -h "*) : > "${cwd}/dead-w1"; echo "%2" ;;
+      *) : > "${cwd}/dead-hud"; echo "%3" ;;
     esac
     exit 0
     ;;
@@ -3916,6 +4048,8 @@ esac
 
           await writeFile(join(cwd, 'unavailable-pane-proof'), '');
           await rm(join(cwd, 'startup-ready-check-started'), { force: true });
+          await rm(join(cwd, 'dead-w1'), { force: true });
+          await rm(join(cwd, 'dead-hud'), { force: true });
           await assert.rejects(
             () => withoutTeamWorkerEnv(() =>
               startTeam(
@@ -4121,8 +4255,8 @@ case "$1" in
         if [ -f "$count_file" ]; then count=$(cat "$count_file"); fi
         count=$((count + 1))
         printf '%s' "$count" > "$count_file"
-        if [ "$count" -le 3 ]; then
-          printf "%%1\t0\t2000000001\n"
+        if [ "$count" -le 5 ]; then
+          printf "%%1\t0\t2000000001\n%%2\t0\t2000004242\n"
         else
           printf 'not-a-pane-snapshot\n'
         fi
@@ -4159,7 +4293,7 @@ esac
               [{ subject: 's', description: 'd', owner: 'worker-1' }],
               cwd,
             )),
-            /tmux pane is not proven live: %2/,
+            /exact_pane_proof_unavailable:%2:malformed_snapshot/,
           );
 
           const runtimeTeamName = await resolveRuntimeTeamName(cwd, 'team-no-resource-create-proof');
@@ -4224,27 +4358,27 @@ case "$1" in
     ;;
   list-panes)
     case "$*" in
-      *"#{pane_dead} #{pane_pid}"*)
-        echo "0 2000004242"
+      *"-a -F #{pane_id}"*)
+        printf "%%1\t0\t2000004141\n"
+        if [ -f "${tmuxLogPath}.w1" ]; then printf "%%2\t0\t2000004242\n"; fi
+        if [ -f "${tmuxLogPath}.w2" ]; then printf "%%3\t0\t2000004343\n"; fi
+        if [ -f "${tmuxLogPath}.hud" ]; then printf "%%4\t0\t2000004444\n"; fi
         ;;
       *"pane_current_command"*)
-        printf "%%1\\tnode\\t'codex'\\n"
+        printf "%%1\tnode\t'codex'\n"
+        if [ -f "${tmuxLogPath}.w1" ]; then printf "%%2\tcodex\tcodex\n"; fi
+        if [ -f "${tmuxLogPath}.w2" ]; then printf "%%3\tcodex\tcodex\n"; fi
+        if [ -f "${tmuxLogPath}.hud" ]; then printf "%%4\tnode\thud --watch\n"; fi
         ;;
-      *"-t %2"*"#{pane_pid}"*)
-        echo "2000004242"
-        ;;
-      *"-t %3"*"#{pane_pid}"*)
-        echo "2000004343"
-        ;;
-      *"-t %4"*"#{pane_pid}"*)
-        echo "2000004444"
-        ;;
-      *"#{pane_pid}"*)
-        echo "2000004141"
-        ;;
-      *)
-        exit 0
-        ;;
+      *"-t %2"*"#{pane_dead} #{pane_pid}"*) echo "0 2000004242" ;;
+      *"-t %3"*"#{pane_dead} #{pane_pid}"*) echo "0 2000004343" ;;
+      *"-t %4"*"#{pane_dead} #{pane_pid}"*) echo "0 2000004444" ;;
+      *"#{pane_dead} #{pane_pid}"*) echo "0 2000004141" ;;
+      *"-t %2"*"#{pane_pid}"*) echo "2000004242" ;;
+      *"-t %3"*"#{pane_pid}"*) echo "2000004343" ;;
+      *"-t %4"*"#{pane_pid}"*) echo "2000004444" ;;
+      *"#{pane_pid}"*) echo "2000004141" ;;
+      *) exit 0 ;;
     esac
     exit 0
     ;;
@@ -4260,9 +4394,9 @@ case "$1" in
     count=$((count + 1))
     printf '%s' "$count" > "$count_file"
     case "$count" in
-      1) echo "%2" ;;
-      2) echo "%3" ;;
-      3) echo "%4" ;;
+      1) : > "${tmuxLogPath}.w1"; echo "%2" ;;
+      2) : > "${tmuxLogPath}.w2"; echo "%3" ;;
+      3) : > "${tmuxLogPath}.hud"; echo "%4" ;;
       *) echo "%5" ;;
     esac
     exit 0
@@ -4969,7 +5103,7 @@ if [ ! -f "$hud_state" ]; then
 fi
 worker_state="${tmuxLogPath}.worker-state"
 if [ ! -f "$worker_state" ]; then
-  printf 'present' > "$worker_state"
+  printf 'absent' > "$worker_state"
 fi
 case "\${1:-}" in
   -V)
@@ -5014,12 +5148,13 @@ case "\${1:-}" in
           printf "%%3\\tnode\\texec env OMX_TMUX_HUD_OWNER=1 OMX_TMUX_HUD_LEADER_PANE='%%1' node /tmp/bin/omx.js hud --watch\\n"
         fi
         ;;
-      *"#{pane_dead} #{pane_pid}"*)
-        echo "1 2000999999"
-        ;;
-      *"#{pane_pid}"*)
-        echo "2000999999"
-        ;;
+      *"-t %1"*"#{pane_dead} #{pane_pid}"*) echo "0 2000999998" ;;
+      *"-t %2"*"#{pane_dead} #{pane_pid}"*) echo "0 2000999999" ;;
+      *"-t %3"*"#{pane_dead} #{pane_pid}"*) echo "0 2000999997" ;;
+      *"-t %1"*"#{pane_pid}"*) echo "2000999998" ;;
+      *"-t %2"*"#{pane_pid}"*) echo "2000999999" ;;
+      *"-t %3"*"#{pane_pid}"*) echo "2000999997" ;;
+      *"#{pane_pid}"*) echo "2000999998" ;;
       *)
         exit 0
         ;;
@@ -7253,6 +7388,7 @@ esac
           if (!config) return;
           config.tmux_session = 'omx-team-team-shutdown-prekill-order';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = null;
           config.workers[0]!.pane_id = '%13';
           config.workers[1]!.pane_id = '%14';
@@ -7616,7 +7752,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '';
           config.workers[1]!.pane_id = '%999';
           await saveTeamConfig(config, cwd);
@@ -7665,7 +7803,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%10';
+          config.leader_pane_pid = 2000000010;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%13';
           await saveTeamConfig(config, cwd);
 
@@ -7716,7 +7856,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%10';
+          config.leader_pane_pid = 2000000010;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%13';
           await saveTeamConfig(config, cwd);
 
@@ -7784,6 +7926,7 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%10';
+          config.leader_pane_pid = 2000000010;
           config.hud_pane_id = null;
           config.tmux_pane_owner_id = 'owner-1';
           config.workers[0]!.pane_id = '%13';
@@ -7842,6 +7985,10 @@ case "$1" in
         fi
         exit 0
         ;;
+      *"-t %10 -F #{pane_id}"*"#{pane_current_command}"*)
+        printf "%%10\\tzsh\\tzsh\\n"
+        exit 0
+        ;;
       *)
         exit 1
         ;;
@@ -7887,7 +8034,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%10';
+          config.leader_pane_pid = 2000000010;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%13';
           config.workers[1]!.pane_id = '%14';
           await saveTeamConfig(config, cwd);
@@ -7992,7 +8141,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%10';
+          config.leader_pane_pid = 2000000010;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%13';
           config.workers[1]!.pane_id = '%15';
           await saveTeamConfig(config, cwd);
@@ -8089,7 +8240,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%13';
           config.workers[1]!.pane_id = '%14';
           await saveTeamConfig(config, cwd);
@@ -8188,7 +8341,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%13';
           config.workers[1]!.pane_id = '%14';
           await saveTeamConfig(config, cwd);
@@ -8273,7 +8428,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%10';
+          config.leader_pane_pid = 2000000010;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '';
           await saveTeamConfig(config, cwd);
 
@@ -8293,7 +8450,7 @@ esac
     }
   });
 
-  it('shutdownTeam does not restore HUD onto a live leader pane without matching ownership tag', async () => {
+  it('shutdownTeam rejects a reused persisted HUD pane after successful and partial session persistence', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-runtime-shutdown-reused-leader-pane-'));
     const teamName = 'team-reused-leader-pane';
     try {
@@ -8359,26 +8516,51 @@ esac
           env: { OMX_SESSION_ID: 'expected-team-session' },
         },
         async ({ tmuxLogPath }) => {
-          await initTeamState(teamName, 'shutdown reused leader pane test', 'executor', 1, cwd);
-          const config = await readTeamConfig(teamName, cwd);
-          assert.ok(config);
-          if (!config) return;
-          config.tmux_session = 'leader:0';
-          config.leader_pane_id = '%11';
-          config.hud_pane_id = '%12';
+          const config = await initTeamState(teamName, 'shutdown reused HUD pane test', 'executor', 1, cwd);
+          applyCreatedInteractiveSessionToConfig(config, {
+            name: 'leader:0',
+            workerCount: 1,
+            cwd,
+            workerPaneIds: [],
+            workerPanePidsByIndex: [],
+            leaderPaneId: '%11',
+            leaderPanePid: 1000000011,
+            hudPaneId: '%12',
+            hudPanePid: 1000000012,
+            resizeHookName: null,
+            resizeHookTarget: null,
+            teamPaneOwnerId: `team:${teamName}`,
+          }, []);
+          // A partial-session replay must retain the exact leader/HUD bindings rather
+          // than degrading the persisted HUD target to its pane ID.
+          applyCreatedInteractiveSessionToConfig(config, {
+            name: 'leader:0',
+            workerCount: 1,
+            cwd,
+            workerPaneIds: [],
+            workerPaneIdsByIndex: [null],
+            workerPanePidsByIndex: [null],
+            leaderPaneId: '%11',
+            leaderPanePid: 1000000011,
+            hudPaneId: '%12',
+            hudPanePid: 1000000012,
+            resizeHookName: null,
+            resizeHookTarget: null,
+            teamPaneOwnerId: `team:${teamName}`,
+          }, []);
           config.workers[0]!.pane_id = '';
           await saveTeamConfig(config, cwd);
 
-          await shutdownTeam(teamName, cwd, { force: true });
+          await assert.rejects(
+            () => shutdownTeam(teamName, cwd, { force: true }),
+            /shutdown_shared_session_HUD_pane_identity_changed:%12/,
+          );
 
           const tmuxLog = await readFile(tmuxLogPath, 'utf-8');
-          assert.match(tmuxLog, /show-option -qv -p -t %11 @omx_team_pane_owner_id/);
-          assert.match(tmuxLog, /show-option -qv -p -t %12 @omx_team_pane_owner_id/);
           assert.doesNotMatch(tmuxLog, /kill-pane -t %11/);
           assert.doesNotMatch(tmuxLog, /kill-pane -t %12/);
-          assert.match(tmuxLog, /kill-pane -t %13/);
-          assert.doesNotMatch(tmuxLog, /split-window/);
-          assert.doesNotMatch(tmuxLog, /select-pane -t %11/);
+          assert.doesNotMatch(tmuxLog, /kill-pane -t %13/);
+          assert.doesNotMatch(tmuxLog, /split-window|resize-pane|select-pane|run-shell/);
         },
       );
     } finally {
@@ -8416,6 +8598,10 @@ case "$1" in
         ;;
       *"-t leader:0 -F #{pane_id}"*"#{pane_current_command}"*)
         printf "%%11\\tpwsh\\tpwsh\\n%%12\\tnode\\tnode /tmp/bin/omx.js hud --watch\\n%%13\\tcodex\\tenv OMX_TEAM_INTERNAL_WORKER=team-shutdown-win32-split/worker-1 codex\\n%%14\\tcodex\\tenv OMX_TEAM_INTERNAL_WORKER=team-shutdown-win32-split/worker-2 codex\\n"
+        exit 0
+        ;;
+      *"-t %11 -F #{pane_id}"*"#{pane_current_command}"*)
+        printf "%%11\\tpwsh\\tpwsh\\n"
         exit 0
         ;;
       *)
@@ -8463,7 +8649,9 @@ esac
             if (!config) return;
             config.tmux_session = 'leader:0';
             config.leader_pane_id = '%11';
+            config.leader_pane_pid = 2000000011;
             config.hud_pane_id = '%12';
+            config.hud_pane_pid = 2000000012;
             config.workers[0]!.pane_id = '%13';
             config.workers[1]!.pane_id = '%14';
             await saveTeamConfig(config, cwd);
@@ -8564,7 +8752,9 @@ esac
             if (!config) return;
             config.tmux_session = 'leader:0';
             config.leader_pane_id = '%11';
+            config.leader_pane_pid = 2000000011;
             config.hud_pane_id = '%12';
+            config.hud_pane_pid = 2000000012;
             config.workers[0]!.pane_id = '%23';
             config.workers[1]!.pane_id = '%24';
             await saveTeamConfig(config, cwd);
@@ -8633,7 +8823,9 @@ esac
         if (!config) return;
         config.tmux_session = 'leader:0';
         config.leader_pane_id = '%11';
+        config.leader_pane_pid = 2000000011;
         config.hud_pane_id = '%12';
+        config.hud_pane_pid = 2000000012;
         config.tmux_pane_owner_id = 'team:team-hud-prevalidation';
         config.resize_hook_name = 'omx_resize_hud_prevalidation';
         config.resize_hook_target = 'leader:0';
@@ -8694,7 +8886,9 @@ esac
         if (!config) return;
         config.tmux_session = 'leader:0';
         config.leader_pane_id = '%11';
+        config.leader_pane_pid = 2000000011;
         config.hud_pane_id = '%12';
+        config.hud_pane_pid = 2000000012;
         config.tmux_pane_owner_id = 'team:team-hud-pid-continuity';
         config.workers[0]!.pane_id = '%13';
         await saveTeamConfig(config, cwd);
@@ -8763,7 +8957,9 @@ esac
         if (!config) return;
         config.tmux_session = 'leader:0';
         config.leader_pane_id = '%11';
+        config.leader_pane_pid = 2000000011;
         config.hud_pane_id = '%12';
+        config.hud_pane_pid = 2000000012;
         config.tmux_pane_owner_id = 'team:team-leader-owner-continuity';
         config.workers[0]!.pane_id = '%13';
         await saveTeamConfig(config, cwd);
@@ -8808,6 +9004,10 @@ case "$1" in
         ;;
       *"-t leader:0 -F #{pane_id}"*"#{pane_current_command}"*)
         printf "%%11\\tzsh\\tzsh\\n%%12\\tnode\\tnode /tmp/bin/omx.js hud --watch\\n%%13\\tcodex\\tenv OMX_TEAM_INTERNAL_WORKER=team-shutdown-shared-session/worker-1 codex\\n%%14\\tcodex\\tenv OMX_TEAM_INTERNAL_WORKER=team-shutdown-shared-session/worker-2 codex\\n"
+        exit 0
+        ;;
+      *"-t %11 -F #{pane_id}"*"#{pane_current_command}"*)
+        printf "%%11\\tzsh\\tzsh\\n"
         exit 0
         ;;
       *)
@@ -8855,7 +9055,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%13';
           config.workers[1]!.pane_id = '%14';
           await saveTeamConfig(config, cwd);
@@ -8920,6 +9122,10 @@ case "$1" in
         printf "%%11\\tzsh\\tzsh\\n%%12\\tnode\\texec env OMX_TMUX_HUD_OWNER=1 OMX_TMUX_HUD_LEADER_PANE='%%11' node /tmp/bin/omx.js hud --watch\\n%%13\\tcodex\\tenv OMX_TEAM_INTERNAL_WORKER=team-shutdown-restore-hud/worker-2 codex\\n"
         exit 0
         ;;
+      *"-t %11 -F #{pane_id}"*"#{pane_current_command}"*)
+        printf "%%11\\tzsh\\tzsh\\n"
+        exit 0
+        ;;
       *)
         exit 1
         ;;
@@ -8965,7 +9171,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%12';
           config.workers[1]!.pane_id = '%13';
           await saveTeamConfig(config, cwd);
@@ -9083,7 +9291,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%13';
           config.workers[1]!.pane_id = '%99';
           await saveTeamConfig(config, cwd);
@@ -9189,7 +9399,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = '%99';
+          config.hud_pane_pid = 2000000099;
           config.workers[0]!.pane_id = '%13';
           await saveTeamConfig(config, cwd);
 
@@ -9298,7 +9510,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%13';
           await saveTeamConfig(config, cwd);
 
@@ -9411,7 +9625,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%13';
           await saveTeamConfig(config, cwd);
 
@@ -9512,7 +9728,9 @@ esac
           if (!config) return;
           config.tmux_session = 'leader:0';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%13';
           await saveTeamConfig(config, cwd);
 
@@ -9576,7 +9794,9 @@ esac
           if (!config) return;
           config.tmux_session = 'omx-team-team-shutdown-exclusions';
           config.leader_pane_id = '%11';
+          config.leader_pane_pid = 2000000011;
           config.hud_pane_id = '%12';
+          config.hud_pane_pid = 2000000012;
           config.workers[0]!.pane_id = '%11';
           config.workers[1]!.pane_id = '%12';
           config.workers[2]!.pane_id = '%13';

@@ -90,8 +90,12 @@ export interface TeamConfig {
   worktree_mode?: WorktreeMode;
   /** Leader's own tmux pane ID — must never be killed during worker cleanup. */
   leader_pane_id: string | null;
+  /** Frozen leader pane PID paired with leader_pane_id; absent legacy bindings are never effect authority. */
+  leader_pane_pid?: number | null;
   /** HUD pane spawned below the leader column — excluded from worker pane cleanup. */
   hud_pane_id: string | null;
+  /** Frozen HUD pane PID paired with hud_pane_id; absent legacy bindings are never effect authority. */
+  hud_pane_pid?: number | null;
   /** Team-scoped tmux pane owner token used by shutdown safety checks. */
   tmux_pane_owner_id?: string;
   /** Registered HUD resize hook name used for window-size reconciliation. */
@@ -310,7 +314,9 @@ export interface TeamManifestV2 {
   workspace_mode?: 'single' | 'worktree';
   worktree_mode?: WorktreeMode;
   leader_pane_id: string | null;
+  leader_pane_pid?: number | null;
   hud_pane_id: string | null;
+  hud_pane_pid?: number | null;
   tmux_pane_owner_id?: string;
   resize_hook_name: string | null;
   resize_hook_target: string | null;
@@ -762,6 +768,8 @@ function isTeamManifestV2(value: unknown): value is TeamManifestV2 {
   if (!Array.isArray(v.workers)) return false;
   if (!(typeof v.leader_pane_id === 'string' || v.leader_pane_id === null)) return false;
   if (!(typeof v.hud_pane_id === 'string' || v.hud_pane_id === null)) return false;
+  if (!(typeof v.leader_pane_pid === 'number' || v.leader_pane_pid === null || v.leader_pane_pid === undefined)) return false;
+  if (!(typeof v.hud_pane_pid === 'number' || v.hud_pane_pid === null || v.hud_pane_pid === undefined)) return false;
   if (!(typeof v.resize_hook_name === 'string' || v.resize_hook_name === null)) return false;
   if (!(typeof v.resize_hook_target === 'string' || v.resize_hook_target === null)) return false;
   if (!v.leader || typeof v.leader !== 'object') return false;
@@ -1123,6 +1131,8 @@ export async function initTeamState(
     workspace_mode: workspace.workspace_mode,
     worktree_mode: workspace.worktree_mode,
     leader_pane_id: null,
+    leader_pane_pid: null,
+    hud_pane_pid: null,
     hud_pane_id: null,
     tmux_pane_owner_id: tmuxPaneOwnerId,
     resize_hook_name: null,
@@ -1169,6 +1179,8 @@ export async function initTeamState(
       workspace_mode: workspace.workspace_mode,
       worktree_mode: workspace.worktree_mode,
       leader_pane_id: null,
+      leader_pane_pid: null,
+      hud_pane_pid: null,
       hud_pane_id: null,
       tmux_pane_owner_id: tmuxPaneOwnerId,
       resize_hook_name: null,
@@ -1204,6 +1216,8 @@ async function writeConfig(cfg: TeamConfig, cwd: string): Promise<void> {
       workspace_mode: normalized.workspace_mode,
       worktree_mode: normalized.worktree_mode,
       leader_pane_id: normalized.leader_pane_id,
+      leader_pane_pid: normalized.leader_pane_pid,
+      hud_pane_pid: normalized.hud_pane_pid,
       hud_pane_id: normalized.hud_pane_id,
       tmux_pane_owner_id: normalized.tmux_pane_owner_id,
       resize_hook_name: normalized.resize_hook_name,
@@ -1240,6 +1254,8 @@ function teamConfigFromManifest(manifest: TeamManifestV2): TeamConfig {
     workspace_mode: manifest.workspace_mode,
     worktree_mode: manifest.worktree_mode,
     leader_pane_id: manifest.leader_pane_id,
+    leader_pane_pid: manifest.leader_pane_pid ?? null,
+    hud_pane_pid: manifest.hud_pane_pid ?? null,
     hud_pane_id: manifest.hud_pane_id,
     tmux_pane_owner_id: manifest.tmux_pane_owner_id ?? defaultTmuxPaneOwnerId(manifest.name),
     resize_hook_name: manifest.resize_hook_name,
@@ -1257,6 +1273,12 @@ function normalizeTeamConfig(config: TeamConfig): TeamConfig {
     ...config,
     lifecycle_profile: 'default',
     leader_pane_id: config.leader_pane_id ?? null,
+    leader_pane_pid: typeof config.leader_pane_pid === 'number' && Number.isSafeInteger(config.leader_pane_pid) && config.leader_pane_pid > 0
+      ? config.leader_pane_pid
+      : null,
+    hud_pane_pid: typeof config.hud_pane_pid === 'number' && Number.isSafeInteger(config.hud_pane_pid) && config.hud_pane_pid > 0
+      ? config.hud_pane_pid
+      : null,
     hud_pane_id: config.hud_pane_id ?? null,
     tmux_pane_owner_id: typeof config.tmux_pane_owner_id === 'string' && config.tmux_pane_owner_id.trim() !== ''
       ? config.tmux_pane_owner_id.trim()
@@ -1297,6 +1319,8 @@ function teamManifestFromConfig(config: TeamConfig): TeamManifestV2 {
     workspace_mode: normalized.workspace_mode,
     worktree_mode: normalized.worktree_mode,
     leader_pane_id: normalized.leader_pane_id,
+    leader_pane_pid: normalized.leader_pane_pid,
+    hud_pane_pid: normalized.hud_pane_pid,
     hud_pane_id: normalized.hud_pane_id,
     tmux_pane_owner_id: normalized.tmux_pane_owner_id,
     resize_hook_name: normalized.resize_hook_name,

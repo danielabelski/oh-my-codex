@@ -105,6 +105,10 @@ export interface RestoreStandaloneHudPaneOptions {
   sessionId?: string | null;
   /** Explicit HUD cwd override. When omitted, the live leader pane cwd is preferred over team launch cwd. */
   cwd?: string | null;
+  /** Frozen leader pane PID. When supplied, restoration never adopts a replacement pane PID. */
+  expectedLeaderPanePid?: number;
+  /** Shared-session authorization recheck performed immediately before leader-targeted operations. */
+  assertLeaderPaneAuthorization?: () => void;
 }
 
 const INJECTION_MARKER = '[OMX_TMUX_INJECT]';
@@ -494,7 +498,9 @@ function resolveStandaloneHudRestoreCwdCandidates(
   leaderPaneId: string,
   fallbackCwd: string,
   explicitCwd?: string | null,
+  beforeReadLiveLeaderCwd?: () => void,
 ): RestoreCwdCandidate[] {
+  beforeReadLiveLeaderCwd?.();
   const liveLeaderCwd = readPaneCurrentPath(leaderPaneId);
   return uniqueRestoreCwdCandidates([
     { source: 'explicit', rawPath: explicitCwd },
@@ -2072,8 +2078,15 @@ export function restoreStandaloneHudPane(
     const proof = readExactPaneProofSync(normalizedLeaderPaneId);
     if (proof.status === 'unavailable') throw new ExactPaneProofUnavailableError(proof);
     if (proof.status === 'gone') throw new Error(`tmux pane is not proven live: ${normalizedLeaderPaneId}`);
+    if (options.expectedLeaderPanePid !== undefined && proof.pid !== options.expectedLeaderPanePid) {
+      throw new Error(`tmux pane identity changed: ${normalizedLeaderPaneId}`);
+    }
     return proof.pid;
   })();
+  const requireAuthorizedLeaderPane = (): string => {
+    options.assertLeaderPaneAuthorization?.();
+    return requireLiveExactPaneSync(normalizedLeaderPaneId, options.expectedLeaderPanePid ?? leaderPanePid);
+  };
   const [existingHudPaneId, ...duplicateHudPaneIds] = findOwnedHudPaneIds(
     normalizedLeaderPaneId,
     normalizedLeaderPaneId,
@@ -2109,7 +2122,7 @@ export function restoreStandaloneHudPane(
         ownedHudPanePids.get(existingHudPaneId),
       ));
     }
-    runTmux(['select-pane', '-t', requireLiveExactPaneSync(normalizedLeaderPaneId, leaderPanePid)]);
+    runTmux(['select-pane', '-t', requireAuthorizedLeaderPane()]);
     return existingHudPaneId;
   }
 
@@ -2119,6 +2132,7 @@ export function restoreStandaloneHudPane(
     normalizedLeaderPaneId,
     cwd,
     options.cwd,
+    requireAuthorizedLeaderPane,
   )) {
     const candidateResult = runTmux([
       'split-window',
@@ -2126,7 +2140,7 @@ export function restoreStandaloneHudPane(
       '-l',
       String(HUD_TMUX_TEAM_HEIGHT_LINES),
       '-t',
-      requireLiveExactPaneSync(normalizedLeaderPaneId, leaderPanePid),
+      requireAuthorizedLeaderPane(),
       '-d',
       '-P',
       '-F',
@@ -2163,7 +2177,7 @@ export function restoreStandaloneHudPane(
     ));
     runTmux(buildReconcileHudResizeArgs(paneId, HUD_TMUX_TEAM_HEIGHT_LINES, hudPanePid));
   }
-  runTmux(['select-pane', '-t', requireLiveExactPaneSync(normalizedLeaderPaneId, leaderPanePid)]);
+  runTmux(['select-pane', '-t', requireAuthorizedLeaderPane()]);
   return paneId;
 }
 

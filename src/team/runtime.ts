@@ -4638,6 +4638,10 @@ export async function shutdownTeam(teamName: string, cwd: string, options: Shutd
         }
         restoredHudPaneId = restoreStandaloneHudPane(trustedHudRestoreLeaderPaneId, cwd, {
           sessionId: leaderSessionId,
+          expectedLeaderPanePid: frozenRestoreLeaderAuthorization?.pid,
+          assertLeaderPaneAuthorization: frozenRestoreLeaderAuthorization
+            ? () => assertSharedPaneAuthorizationContinuous(frozenRestoreLeaderAuthorization, 'restore leader pane')
+            : undefined,
         });
         if (!restoredHudPaneId) {
           const reason = trustedHudRestoreLeaderPaneId

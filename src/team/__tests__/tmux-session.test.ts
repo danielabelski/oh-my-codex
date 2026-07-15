@@ -4813,6 +4813,48 @@ esac
     }
   });
 
+  it('does not adopt a leader PID replacement between standalone HUD checks and the cwd read', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-standalone-hud-leader-pid-reuse-'));
+    try {
+      await withMockTmuxFixture(
+        'omx-tmux-standalone-hud-leader-pid-reuse-',
+        (logPath) => `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "${logPath}"
+case "$1" in
+  list-panes)
+    if [ "$2" = "-a" ]; then
+      case "$*" in
+        *"#{pane_pid}"*)
+          count=0
+          [ -f "${logPath}.proof-count" ] && count=$(cat "${logPath}.proof-count")
+          count=$((count + 1))
+          printf '%s' "$count" > "${logPath}.proof-count"
+          if [ "$count" -eq 1 ]; then printf '%%11\\t0\\t2000000011\\n'; else printf '%%11\\t0\\t2000000099\\n'; fi
+          ;;
+        *) printf '%%11\\tzsh\\tzsh\\n' ;;
+      esac
+    fi
+    exit 0
+    ;;
+  split-window) printf '%%44\\n' ;;
+  *) exit 0 ;;
+esac
+`,
+        async ({ logPath }) => {
+          assert.throws(
+            () => restoreStandaloneHudPane('%11', cwd, { expectedLeaderPanePid: 2000000011 }),
+            /tmux pane identity changed: %11/,
+          );
+          const commands = await readFile(logPath, 'utf-8');
+          assert.doesNotMatch(commands, /display-message|split-window|resize-pane|select-pane/);
+        },
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('does not resize a PID-reused existing standalone HUD on POSIX', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-standalone-existing-hud-posix-pid-reuse-'));
     try {
@@ -4869,7 +4911,7 @@ case "$1" in
       if [ -f "${logPath}.proof-count" ]; then count=$(cat "${logPath}.proof-count"); fi
       count=$((count + 1))
       printf '%s' "$count" > "${logPath}.proof-count"
-      if [ "$count" -ge 4 ]; then
+      if [ "$count" -ge 5 ]; then
         printf '%%11\\t0\\t2000000011\\n%%44\\t0\\t2000000099\\n'
       else
         printf '%%11\\t0\\t2000000011\\n%%44\\t0\\t2000000044\\n'

@@ -8709,7 +8709,7 @@ esac
     }
   });
 
-  it('shutdownTeam fails closed before restoring onto a shared leader whose owner changes after authorization', async () => {
+  it('shutdownTeam blocks restoration when a shared leader PID and owner change after the post-HUD check', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-runtime-shutdown-leader-owner-continuity-'));
     const teamName = 'team-leader-owner-continuity';
     try {
@@ -8723,7 +8723,9 @@ case "$1" in
   list-panes)
     case "$*" in
       *"-a -F #{pane_id}"*)
-        printf '%%11\t0\t2000000011\n'
+        owner_reads=0
+        [ -f "${tmuxLogPath}.leader-owner-reads" ] && owner_reads=$(cat "${tmuxLogPath}.leader-owner-reads")
+        if [ "$owner_reads" -ge 4 ]; then printf '%%11\t0\t2000000099\n'; else printf '%%11\t0\t2000000011\n'; fi
         if [ ! -f "${tmuxLogPath}.killed-%12" ]; then printf '%%12\t0\t2000000012\n'; fi
         printf '%%13\t0\t2000000013\n'
         ;;

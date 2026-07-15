@@ -250,7 +250,9 @@ process.on('SIGTERM', () => process.exit(0));
       if (!config) return;
       config.tmux_session = 'omx-team-low-role-scale';
       config.leader_pane_id = '%11';
+      config.leader_pane_pid = 42421;
       config.workers[0]!.pane_id = '%21';
+      config.workers[0]!.pid = 42422;
       await saveTeamConfig(config, cwd);
 
       const manifestPath = join(cwd, '.omx', 'state', 'team', 'low-role-scale', 'manifest.v2.json');
@@ -353,7 +355,9 @@ process.on('SIGTERM', () => process.exit(0));
       if (!config) return;
       config.tmux_session = 'omx-team-exact-role-cli';
       config.leader_pane_id = '%11';
+      config.leader_pane_pid = 42421;
       config.workers[0]!.pane_id = '%21';
+      config.workers[0]!.pid = 42422;
       config.next_worker_index = 3;
       await saveTeamConfig(config, cwd);
 

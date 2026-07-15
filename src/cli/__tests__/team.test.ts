@@ -1622,12 +1622,12 @@ case "$1" in
       *"-F #{pane_dead} #{pane_pid}"*)
         exit 1
         ;;
-      *"-t leader:0 -F #{pane_id}"*"#{pane_current_command}"*)
-        printf "%%11\\tzsh\\tzsh\\n%%12\\tnode\\tnode /tmp/bin/omx.js hud --watch\\n%%13\\tcodex\\tenv OMX_TEAM_INTERNAL_WORKER=shared-shutdown-cli/worker-1 codex\\n%%14\\tcodex\\tenv OMX_TEAM_INTERNAL_WORKER=shared-shutdown-cli/worker-2 codex\\n"
+      *"-F #{pane_id}\t#{pane_current_command}\t#{pane_start_command}"*)
+        printf "%%11\tzsh\tzsh\n%%12\tnode\tnode /tmp/bin/omx.js hud --watch\n%%13\tcodex\tenv OMX_TEAM_INTERNAL_WORKER=shared-shutdown-cli/worker-1 codex\n%%14\tcodex\tenv OMX_TEAM_INTERNAL_WORKER=shared-shutdown-cli/worker-2 codex\n"
         exit 0
         ;;
-      *"-t leader:0 -F #{pane_id}"*)
-        printf "%%11\\n%%12\\n%%13\\n%%14\\n"
+      *"-F #{pane_id}"*)
+        printf "%%11\n%%12\n%%13\n%%14\n"
         exit 0
         ;;
       *)
@@ -1682,9 +1682,13 @@ esac
       if (!config) return;
       config.tmux_session = 'leader:0';
       config.leader_pane_id = '%11';
+      config.leader_pane_pid = 1111;
       config.hud_pane_id = '%12';
+      config.hud_pane_pid = 1212;
       config.workers[0]!.pane_id = '%13';
+      config.workers[0]!.pid = 1313;
       config.workers[1]!.pane_id = '%14';
+      config.workers[1]!.pid = 1414;
       await saveTeamConfig(config, wd);
 
       const result = await runNodeCli(['team', 'shutdown', 'shared-shutdown-cli', '--force'], {
@@ -1733,9 +1737,25 @@ esac
       await withTempTmuxSession(async (fixture) => {
         const teamName = 'shared-shutdown-in-pane';
         const teamStateRoot = join(wd, '.omx', 'state');
+        const runtimeDir = join(teamStateRoot, 'team', teamName, 'runtime');
+        const workerPaneOneScript = join(runtimeDir, 'worker-1-startup.sh');
+        const workerPaneTwoScript = join(runtimeDir, 'worker-2-startup.sh');
+        await mkdir(runtimeDir, { recursive: true });
+        await writeFile(workerPaneOneScript, '#!/bin/sh\nexec sleep 300\n');
+        await writeFile(workerPaneTwoScript, '#!/bin/sh\nexec sleep 300\n');
+        await chmod(workerPaneOneScript, 0o755);
+        await chmod(workerPaneTwoScript, 0o755);
         const hudPaneId = runFixtureTmux(fixture, ['split-window', '-d', '-P', '-F', '#{pane_id}', '-t', fixture.windowTarget, 'sleep 300']);
-        const workerPaneOne = runFixtureTmux(fixture, ['split-window', '-d', '-P', '-F', '#{pane_id}', '-t', fixture.windowTarget, 'sleep 300']);
-        const workerPaneTwo = runFixtureTmux(fixture, ['split-window', '-d', '-P', '-F', '#{pane_id}', '-t', fixture.windowTarget, 'sleep 300']);
+        const workerPaneOne = runFixtureTmux(fixture, ['split-window', '-d', '-P', '-F', '#{pane_id}', '-t', fixture.windowTarget, workerPaneOneScript]);
+        const workerPaneTwo = runFixtureTmux(fixture, ['split-window', '-d', '-P', '-F', '#{pane_id}', '-t', fixture.windowTarget, workerPaneTwoScript]);
+        const leaderPanePid = Number(runFixtureTmux(fixture, ['display-message', '-p', '-t', fixture.leaderPaneId, '#{pane_pid}']));
+        const hudPanePid = Number(runFixtureTmux(fixture, ['display-message', '-p', '-t', hudPaneId, '#{pane_pid}']));
+        const workerPaneOnePid = Number(runFixtureTmux(fixture, ['display-message', '-p', '-t', workerPaneOne, '#{pane_pid}']));
+        const workerPaneTwoPid = Number(runFixtureTmux(fixture, ['display-message', '-p', '-t', workerPaneTwo, '#{pane_pid}']));
+        assert.ok(leaderPanePid > 0);
+        assert.ok(hudPanePid > 0);
+        assert.ok(workerPaneOnePid > 0);
+        assert.ok(workerPaneTwoPid > 0);
 
         await initTeamState(teamName, 'shared shutdown in-pane test', 'executor', 2, wd);
         const config = await readTeamConfig(teamName, wd);
@@ -1743,9 +1763,13 @@ esac
         if (!config) return;
         config.tmux_session = fixture.windowTarget;
         config.leader_pane_id = fixture.leaderPaneId;
+        config.leader_pane_pid = leaderPanePid;
         config.hud_pane_id = hudPaneId;
+        config.hud_pane_pid = hudPanePid;
         config.workers[0]!.pane_id = workerPaneOne;
+        config.workers[0]!.pid = workerPaneOnePid;
         config.workers[1]!.pane_id = workerPaneTwo;
+        config.workers[1]!.pid = workerPaneTwoPid;
         await saveTeamConfig(config, wd);
 
         const result = await runNodeCli(['team', 'shutdown', teamName, '--force'], {

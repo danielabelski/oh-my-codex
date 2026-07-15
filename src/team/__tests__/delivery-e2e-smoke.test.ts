@@ -270,14 +270,25 @@ async function withBridgeFixture<T>(cwd: string, fn: (runtimePath: string) => Pr
 }
 
 async function configurePaneIds(teamName: string, cwd: string, leaderPaneId: string, workerPaneIds: Record<string, string>): Promise<void> {
+  const panePids: Record<string, number> = {
+    '%10': 111,
+    '%11': 112,
+    '%12': 113,
+    '%95': 195,
+  };
   const config = await readTeamConfig(teamName, cwd);
   assert.ok(config, 'missing team config');
   if (!config) throw new Error('missing team config');
   config.leader_pane_id = leaderPaneId;
-  config.workers = config.workers.map((worker) => ({
-    ...worker,
-    pane_id: workerPaneIds[worker.name] ?? worker.pane_id,
-  }));
+  config.leader_pane_pid = panePids[leaderPaneId];
+  config.workers = config.workers.map((worker) => {
+    const paneId = workerPaneIds[worker.name] ?? worker.pane_id;
+    return {
+      ...worker,
+      pane_id: paneId,
+      pid: panePids[paneId],
+    };
+  });
   await saveTeamConfig(config, cwd);
 }
 

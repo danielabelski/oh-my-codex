@@ -9776,6 +9776,84 @@ esac
     }
   });
 
+  it('shutdownTeam replays pinned restored-HUD debt when a crash leaves canonical config on a different HUD identity', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-runtime-shutdown-restored-hud-debt-retry-'));
+    const teamName = 'team-hud-debt-retry';
+    try {
+      await withMockTmuxFixture(
+        {
+          dirPrefix: 'omx-runtime-shutdown-restored-hud-debt-retry-bin-',
+          tmuxScript: (tmuxLogPath) => `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "${tmuxLogPath}"
+case "$1" in
+  -V)
+    echo 'tmux 3.4'
+    ;;
+  list-panes)
+    case "$*" in
+      *"-a -F #{pane_id}"*)
+        printf '%%11\\t0\\t2000000011\\n'
+        if [ ! -f "${tmuxLogPath}.killed-%44" ]; then printf '%%44\\t0\\t2000000044\\n'; fi
+        ;;
+      *"-t %11 -F #{pane_id}"*"#{pane_current_command}"*)
+        printf '%%11\\tzsh\\tzsh\\n'
+        if [ ! -f "${tmuxLogPath}.killed-%44" ]; then printf "%%44\\tnode\\texec env OMX_TMUX_HUD_OWNER=1 OMX_TMUX_HUD_LEADER_PANE='%%11' node /tmp/bin/omx.js hud --watch\\n"; fi
+        ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  show-option)
+    if [ "$5" = '%11' ] && [ "$6" = '@omx_team_pane_owner_id' ]; then
+      printf 'team:restored-hud-debt-retry\\n'
+    else
+      exit 1
+    fi
+    ;;
+  kill-pane)
+    : > "${tmuxLogPath}.killed-$3"
+    ;;
+  *) : ;;
+esac
+`,
+        },
+        async ({ tmuxLogPath }) => {
+          await initTeamState(teamName, 'restored HUD debt retry test', 'executor', 1, cwd);
+          await markDetachedSessionAbsent(teamName, cwd);
+          const config = await readTeamConfig(teamName, cwd);
+          assert.ok(config);
+          if (!config) return;
+          // Simulate a crash after a restored HUD was durably recorded but
+          // before its config transaction: a later stale HUD must not erase
+          // that pinned obligation.
+          config.hud_pane_id = '%45';
+          config.hud_pane_pid = 2000000045;
+          await saveTeamConfig(config, cwd);
+          const debtPath = join(cwd, '.omx', 'state', 'team', teamName, '.restored-hud-cleanup-debt.json');
+          await writeFile(debtPath, `${JSON.stringify({
+            schema_version: 1,
+            operation: 'restored_hud_cleanup',
+            pane_id: '%44',
+            pane_pid: 2000000044,
+            leader_pane_id: '%11',
+            leader_pane_pid: 2000000011,
+            leader_pane_owner_id: 'team:restored-hud-debt-retry',
+            hud_owner_leader_pane_id: '%11',
+          })}\n`);
+
+          await shutdownTeam(teamName, cwd, { force: true });
+
+          assert.equal(existsSync(debtPath), false);
+          const tmuxLog = await readFile(tmuxLogPath, 'utf-8');
+          assert.match(tmuxLog, /kill-pane -t %44/);
+          assert.doesNotMatch(tmuxLog, /kill-pane -t %45/);
+        },
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('shutdownTeam preserves unpersisted legacy worker-looking panes without owner tags', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-runtime-shutdown-unpersisted-legacy-worker-'));
     const teamName = 'team-unpersisted-legacy-worker';

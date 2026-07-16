@@ -4494,12 +4494,41 @@ export async function shutdownTeam(teamName: string, cwd: string, options: Shutd
     return { commitHygieneArtifacts: null };
   }
   const restoredHudDebtRoot = join(config.team_state_root ?? resolveCanonicalTeamStateRoot(cwd), 'team', sanitized);
-  if (typeof config.hud_pane_id === 'string'
-    && /^%[0-9]+$/.test(config.hud_pane_id)
-    && typeof config.hud_pane_pid === 'number'
+  const configuredRestoredHudPaneId = typeof config.hud_pane_id === 'string' && /^%[0-9]+$/.test(config.hud_pane_id)
+    ? config.hud_pane_id
+    : null;
+  const configuredRestoredHudPanePid = typeof config.hud_pane_pid === 'number'
     && Number.isSafeInteger(config.hud_pane_pid)
-    && config.hud_pane_pid > 0) {
-    finalizeRestoredHudCleanupDebtSync(cwd, config.hud_pane_id, config.hud_pane_pid, restoredHudDebtRoot);
+    && config.hud_pane_pid > 0
+    ? config.hud_pane_pid
+    : null;
+  if (configuredRestoredHudPaneId && configuredRestoredHudPanePid) {
+    try {
+      // A restored-HUD debt is finalized only when this canonical config
+      // transaction records its exact frozen pane identity. A stale config may
+      // point to a different HUD after a crash, so replay the pinned debt
+      // rather than treating that mismatch as successful finalization.
+      finalizeRestoredHudCleanupDebtSync(
+        cwd,
+        configuredRestoredHudPaneId,
+        configuredRestoredHudPanePid,
+        restoredHudDebtRoot,
+      );
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.startsWith('restored_hud_cleanup_debt_unresolved:')) {
+        throw error;
+      }
+      reconcileRestoredHudCleanupDebtSync(cwd, restoredHudDebtRoot);
+      // A crash can leave the old shared HUD identity in config after the
+      // restored pane debt has been replayed. Only an exact absent/dead proof
+      // permits forgetting that stale config reference; a live or unavailable
+      // pane remains subject to the normal fail-closed teardown path below.
+      if (readExactPaneProofSync(configuredRestoredHudPaneId).status === 'gone') {
+        config.hud_pane_id = null;
+        config.hud_pane_pid = undefined;
+        await saveTeamConfig(config, cwd);
+      }
+    }
   } else {
     reconcileRestoredHudCleanupDebtSync(cwd, restoredHudDebtRoot);
   }
